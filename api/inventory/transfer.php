@@ -1,0 +1,129 @@
+<?php
+header('Content-Type: application/json');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: POST');
+header('Access-Control-Allow-Headers: Content-Type');
+
+require_once __DIR__ . '/../../config/db.php';
+
+session_start();
+
+if (!isset($_SESSION['user_id'])) {
+    http_response_code(401);
+    echo json_encode(['error' => 'Unauthorized']);
+    exit;
+}
+
+$userId = $_SESSION['user_id'];
+
+$data = json_decode(file_get_contents('php://input'), true);
+if (!$data || !isset($data['productId']) || !isset($data['sourceTier']) || !isset($data['destTier']) || !isset($data['quantity'])) {
+    http_response_code(400);
+    echo json_encode(['error' => 'Invalid input: productId, sourceTier, destTier, and quantity are required']);
+    exit;
+}
+
+$productId = trim($data['productId']);
+$sourceTier = trim($data['sourceTier']);
+$destTier = trim($data['destTier']);
+$quantity = (int)$data['quantity'];
+$variantId = isset($data['variantId']) ? trim($data['variantId']) : null;
+
+$validTiers = ['wholesale', 'retail', 'shelf'];
+if (empty($productId) || $quantity <= 0 || !in_array($sourceTier, $validTiers, true) || !in_array($destTier, $validTiers, true)) {
+    http_response_code(400);
+    echo json_encode(['error' => 'Invalid productId, tier, or quantity']);
+    exit;
+}
+
+if ($sourceTier === $destTier) {
+    http_response_code(400);
+    echo json_encode(['error' => 'Source and destination tiers must be different']);
+    exit;
+}
+
+$pdo = Database::getInstance();
+
+try {
+    $pdo->beginTransaction();
+
+    $variantCondition = $variantId ? 'variantId = :variantId' : 'variantId IS NULL';
+    $stmt = $pdo->prepare("SELECT wholesaleQty, retailQty, shelfQty FROM inventory_levels WHERE productId = :productId AND $variantCondition FOR UPDATE");
+    $params = [':productId' => $productId];
+    if ($variantId) {
+        $params[':variantId'] = $variantId;
+    }
+    $stmt->execute($params);
+    $inventory = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$inventory) {
+        $pdo->rollBack();
+        http_response_code(404);
+        echo json_encode(['error' => 'Inventory not found for product']);
+        exit;
+    }
+
+    $sourceQty = $inventory["{$sourceTier}Qty"];
+    if ($sourceQty < $quantity) {
+        $pdo->rollBack();
+        http_response_code(400);
+        echo json_encode(['error' => 'Insufficient stock in source tier']);
+        exit;
+    }
+
+    $updated = [
+        'wholesaleQty' => $inventory['wholesaleQty'],
+        'retailQty' => $inventory['retailQty'],
+        'shelfQty' => $inventory['shelfQty'],
+    ];
+
+    $updated["{$sourceTier}Qty"] -= $quantity;
+    $updated["{$destTier}Qty"] += $quantity;
+
+    $stmt = $pdo->prepare("UPDATE inventory_levels SET wholesaleQty = :wholesaleQty, retailQty = :retailQty, shelfQty = :shelfQty WHERE productId = :productId AND $variantCondition");
+    $updateParams = [
+        ':wholesaleQty' => $updated['wholesaleQty'],
+        ':retailQty' => $updated['retailQty'],
+        ':shelfQty' => $updated['shelfQty'],
+        ':productId' => $productId,
+    ];
+    if ($variantId) {
+        $updateParams[':variantId'] = $variantId;
+    }
+    $stmt->execute($updateParams);
+
+    $movementId = bin2hex(random_bytes(16));
+    $stmt = $pdo->prepare("INSERT INTO stock_movements (id, productId, variantId, movementType, fromTier, toTier, quantity, performedBy) VALUES (?, ?, ?, 'transfer', ?, ?, ?, ?)");
+    $stmt->execute([$movementId, $productId, $variantId, $sourceTier, $destTier, $quantity, $userId]);
+
+    $stmt = $pdo->prepare("SELECT name FROM users WHERE id = ?");
+    $stmt->execute([$userId]);
+    $userRow = $stmt->fetch(PDO::FETCH_ASSOC);
+    $userName = $userRow['name'] ?? 'Unknown';
+
+    $activityId = bin2hex(random_bytes(16));
+    $stmt = $pdo->prepare("INSERT INTO activity_logs (id, userId, userName, action, details) VALUES (?, ?, ?, 'transfer', ?)");
+    $stmt->execute([
+        $activityId,
+        $userId,
+        $userName,
+        "Transferred {$quantity} units from {$sourceTier} to {$destTier} for product {$productId}",
+    ]);
+
+    $pdo->commit();
+
+    echo json_encode([
+        'success' => true,
+        'message' => 'Stock transfer completed',
+        'movementId' => $movementId,
+        'updatedInventory' => $updated,
+    ]);
+
+} catch (Exception $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    http_response_code(500);
+    echo json_encode(['error' => 'Transaction failed: ' . $e->getMessage()]);
+}
+?>
