@@ -6,6 +6,38 @@ import type { InventoryLevel, InventoryTier } from '@/lib/types'
 import { apiFetch, isApiErrorWithStatus } from '@/lib/api-client'
 import { useAuth } from '@/contexts/auth-context'
 
+const normalizeVariantId = (variantId?: string | null) => {
+  const trimmed = variantId?.trim()
+  return trimmed ? trimmed : undefined
+}
+
+const getInventoryIdentity = (productId: string, variantId?: string | null) =>
+  `${productId}::${normalizeVariantId(variantId) ?? 'base'}`
+
+const aggregateInventoryLevels = (productId: string, levels: InventoryLevel[]): InventoryLevel | undefined => {
+  const matchingLevels = levels.filter((level) => level.productId === productId)
+  if (matchingLevels.length === 0) {
+    return undefined
+  }
+
+  const [firstLevel] = matchingLevels
+  const latestUpdatedAt = matchingLevels.reduce(
+    (latest, level) => (level.updatedAt > latest ? level.updatedAt : latest),
+    firstLevel.updatedAt,
+  )
+
+  return {
+    ...firstLevel,
+    id: getInventoryIdentity(productId),
+    variantId: undefined,
+    wholesaleQty: matchingLevels.reduce((sum, level) => sum + level.wholesaleQty, 0),
+    retailQty: matchingLevels.reduce((sum, level) => sum + level.retailQty, 0),
+    shelfQty: matchingLevels.reduce((sum, level) => sum + level.shelfQty, 0),
+    reorderLevel: matchingLevels.reduce((max, level) => Math.max(max, level.reorderLevel), 0),
+    updatedAt: latestUpdatedAt,
+  }
+}
+
 interface ActivityLogEntry {
   id: string
   type: 'receiving' | 'breakdown' | 'transfer' | 'adjustment'
@@ -47,17 +79,21 @@ interface InventoryContextType {
       quantity: number
       cost: number
       tier?: InventoryTier
+      batchNumber?: string
+      expirationDate?: string
+      manufacturingDate?: string
     }>,
+    supplierId: string,
     supplier: string,
     invoiceNumber: string,
     userName: string
   ) => Promise<{ success: boolean; error?: string }>
   
   // Get inventory for a product
-  getInventory: (productId: string) => InventoryLevel | undefined
+  getInventory: (productId: string, variantId?: string) => InventoryLevel | undefined
   
   // Get stock for a specific tier
-  getStock: (productId: string, tier: InventoryTier) => number
+  getStock: (productId: string, tier: InventoryTier, variantId?: string) => number
   
   // Adjustment operations
   adjustStock: (
@@ -66,7 +102,8 @@ interface InventoryContextType {
     quantityChange: number,
     reason: string,
     notes: string,
-    userName: string
+    userName: string,
+    variantId?: string
   ) => Promise<{ success: boolean; error?: string }>
 
   // Refresh inventory from API
@@ -155,18 +192,30 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     setActivityLog(prev => [newEntry, ...prev].slice(0, 100))
   }, [])
 
-  const getInventory = useCallback((productId: string) => {
-    return inventoryLevels.find(inv => inv.productId === productId)
+  const getInventory = useCallback((productId: string, variantId?: string) => {
+    const normalizedVariantId = normalizeVariantId(variantId)
+
+    if (normalizedVariantId) {
+      return inventoryLevels.find(
+        (inv) => inv.productId === productId && normalizeVariantId(inv.variantId) === normalizedVariantId,
+      )
+    }
+
+    const baseInventory = inventoryLevels.find(
+      (inv) => inv.productId === productId && !normalizeVariantId(inv.variantId),
+    )
+
+    return baseInventory ?? aggregateInventoryLevels(productId, inventoryLevels)
   }, [inventoryLevels])
 
-  const getStock = useCallback((productId: string, tier: InventoryTier) => {
-    const inventory = inventoryLevels.find(inv => inv.productId === productId)
+  const getStock = useCallback((productId: string, tier: InventoryTier, variantId?: string) => {
+    const inventory = getInventory(productId, variantId)
     if (!inventory) return 0
     if (tier === 'wholesale') return inventory.wholesaleQty
     if (tier === 'retail') return inventory.retailQty
     if (tier === 'shelf') return inventory.shelfQty
     return 0
-  }, [inventoryLevels])
+  }, [getInventory])
 
   const transferStock = useCallback(async (
     productId: string,
@@ -275,7 +324,11 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       quantity: number
       cost: number
       tier?: InventoryTier
+      batchNumber?: string
+      expirationDate?: string
+      manufacturingDate?: string
     }>,
+    supplierId: string,
     supplier: string,
     invoiceNumber: string,
     userName: string
@@ -285,10 +338,19 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         return { success: false, error: 'No items to receive' }
       }
 
+      if (!supplierId.trim()) {
+        return { success: false, error: 'Supplier is required' }
+      }
+
+      if (!invoiceNumber.trim()) {
+        return { success: false, error: 'Invoice number is required' }
+      }
+
       await apiFetch('/api/inventory/receive_stock.php', {
         method: 'POST',
         body: {
           items,
+          supplierId,
           supplier,
           invoiceNumber,
         },
@@ -330,7 +392,8 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     quantityChange: number,
     reason: string,
     notes: string,
-    userName: string
+    userName: string,
+    variantId?: string
   ) => {
     try {
       if (quantityChange === 0) {
@@ -345,6 +408,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
           quantityChange,
           reason,
           notes,
+          variantId,
         },
       })
       

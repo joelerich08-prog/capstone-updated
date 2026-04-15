@@ -187,9 +187,9 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
   const cancelOrder = useCallback(async (orderId: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      await apiFetch('/api/orders/cancel.php', {
+      await apiFetch('/api/orders/update_status.php', {
         method: 'POST',
-        body: { orderId },
+        body: { orderId, status: 'cancelled' },
       })
       
       // Update local state
@@ -199,7 +199,8 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
       return { success: true }
     } catch (error) {
-      return { success: false, error: 'Network error occurred' }
+      const message = error instanceof Error ? error.message : 'Network error occurred'
+      return { success: false, error: message }
     }
   }, [])
 

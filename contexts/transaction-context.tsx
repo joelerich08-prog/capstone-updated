@@ -10,6 +10,7 @@ interface TransactionContextType {
   isLoading: boolean
   refreshTransactions: () => Promise<void>
   addTransaction: (transaction: Omit<Transaction, 'id' | 'invoiceNo' | 'createdAt' | 'cashierId' | 'status'> & Partial<Pick<Transaction, 'cashierId' | 'status'>> & { invoiceNo?: string }) => Promise<Transaction | null>
+  refundTransaction: (transactionId: string, reason?: string) => Promise<{ success: boolean; error?: string }>
   getTransactionById: (id: string) => Transaction | undefined
   getTodayTransactions: () => Transaction[]
   getYesterdayTransactions: () => Transaction[]
@@ -18,6 +19,7 @@ interface TransactionContextType {
 }
 
 const TransactionContext = createContext<TransactionContextType | undefined>(undefined)
+const isCompletedTransaction = (transaction: Transaction) => transaction.status === 'completed'
 
 export function TransactionProvider({ children }: { children: ReactNode }) {
   const [transactions, setTransactions] = useState<Transaction[]>([])
@@ -83,6 +85,9 @@ export function TransactionProvider({ children }: { children: ReactNode }) {
     tomorrow.setDate(tomorrow.getDate() + 1)
 
     return transactions.filter(tx => {
+      if (!isCompletedTransaction(tx)) {
+        return false
+      }
       const txDate = new Date(tx.createdAt)
       return txDate >= today && txDate < tomorrow
     })
@@ -95,6 +100,9 @@ export function TransactionProvider({ children }: { children: ReactNode }) {
     yesterday.setDate(yesterday.getDate() - 1)
 
     return transactions.filter(tx => {
+      if (!isCompletedTransaction(tx)) {
+        return false
+      }
       const txDate = new Date(tx.createdAt)
       return txDate >= yesterday && txDate < today
     })
@@ -143,6 +151,31 @@ export function TransactionProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const refundTransaction = useCallback(async (transactionId: string, reason?: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      await apiFetch('/api/transactions/refund.php', {
+        method: 'POST',
+        body: {
+          transactionId,
+          reason,
+        },
+      })
+
+      setTransactions(prev =>
+        prev.map(transaction =>
+          transaction.id === transactionId
+            ? { ...transaction, status: 'refunded' }
+            : transaction
+        )
+      )
+
+      return { success: true }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Network error occurred'
+      return { success: false, error: message }
+    }
+  }, [])
+
   const getYesterdayStats = useCallback((): { sales: number; count: number; profit: number } => {
     const yesterdayTx = getYesterdayTransactions()
     const sales = yesterdayTx.reduce((sum, tx) => sum + tx.total, 0)
@@ -160,6 +193,7 @@ export function TransactionProvider({ children }: { children: ReactNode }) {
         isLoading,
         refreshTransactions,
         addTransaction,
+        refundTransaction,
         getTransactionById,
         getTodayTransactions,
         getYesterdayTransactions,

@@ -4,6 +4,8 @@ import { createContext, useContext, useState, useEffect, useCallback, type React
 import { useAuth } from '@/contexts/auth-context'
 import { apiFetch, isApiErrorWithStatus } from '@/lib/api-client'
 
+const SETTINGS_STORAGE_KEY = 'capstone.settings.local'
+
 // ============ TYPES ============
 
 export interface StoreSettings {
@@ -262,6 +264,43 @@ const defaultSettings: AppSettings = {
   permissions: defaultPermissions,
 }
 
+function readStoredSettings(): Partial<AppSettings> | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY)
+    if (!raw) {
+      return null
+    }
+
+    const parsed = JSON.parse(raw) as Partial<AppSettings>
+    return {
+      ...parsed,
+      printers: parsed.printers?.map(printer => ({
+        ...printer,
+        lastUsed: printer.lastUsed ? new Date(printer.lastUsed) : undefined,
+      })),
+    }
+  } catch (error) {
+    console.error('Failed to read local settings cache:', error)
+    return null
+  }
+}
+
+function writeStoredSettings(nextSettings: AppSettings) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(nextSettings))
+  } catch (error) {
+    console.error('Failed to write local settings cache:', error)
+  }
+}
+
 // ============ CONTEXT ============
 
 interface SettingsContextType {
@@ -311,6 +350,21 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   // fetch settings from API on mount
   useEffect(() => {
+    const storedSettings = readStoredSettings()
+    if (storedSettings) {
+      setSettings(prev => ({
+        ...prev,
+        ...storedSettings,
+        store: storedSettings.store ? { ...prev.store, ...storedSettings.store } : prev.store,
+        notifications: storedSettings.notifications ? { ...prev.notifications, ...storedSettings.notifications } : prev.notifications,
+        pos: storedSettings.pos ? { ...prev.pos, ...storedSettings.pos } : prev.pos,
+        security: storedSettings.security ? { ...prev.security, ...storedSettings.security } : prev.security,
+        printSettings: storedSettings.printSettings ? { ...prev.printSettings, ...storedSettings.printSettings } : prev.printSettings,
+        permissions: storedSettings.permissions ? { ...prev.permissions, ...storedSettings.permissions } : prev.permissions,
+        printers: storedSettings.printers ?? prev.printers,
+      }))
+    }
+
     if (isAuthLoading) {
       return
     }
@@ -324,19 +378,25 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     const fetchSettings = async () => {
       try {
         const apiSettings = await apiFetch<Partial<AppSettings>>('/api/settings/get_config.php')
-        
-        // Merge API settings with defaults
-        setSettings({
+        const stored = readStoredSettings()
+
+        // API remains the source of truth for store, POS, and printer data.
+        // Locally cached settings fill in admin-only preferences not yet persisted by the backend.
+        const mergedSettings: AppSettings = {
           ...defaultSettings,
+          ...stored,
           ...apiSettings,
-          store: { ...defaultSettings.store, ...apiSettings.store },
-          notifications: { ...defaultSettings.notifications, ...apiSettings.notifications },
-          pos: { ...defaultSettings.pos, ...apiSettings.pos },
-          security: { ...defaultSettings.security, ...apiSettings.security },
-          printSettings: { ...defaultSettings.printSettings, ...apiSettings.printSettings },
-          permissions: { ...defaultSettings.permissions, ...apiSettings.permissions },
-          printers: apiSettings.printers || defaultPrinters,
-        })
+          store: { ...defaultSettings.store, ...stored?.store, ...apiSettings.store },
+          notifications: { ...defaultSettings.notifications, ...stored?.notifications, ...apiSettings.notifications },
+          pos: { ...defaultSettings.pos, ...stored?.pos, ...apiSettings.pos },
+          security: { ...defaultSettings.security, ...stored?.security, ...apiSettings.security },
+          printSettings: { ...defaultSettings.printSettings, ...stored?.printSettings, ...apiSettings.printSettings },
+          permissions: { ...defaultSettings.permissions, ...stored?.permissions, ...apiSettings.permissions },
+          printers: apiSettings.printers || stored?.printers || defaultPrinters,
+        }
+
+        setSettings(mergedSettings)
+        writeStoredSettings(mergedSettings)
       } catch (error) {
         if (isApiErrorWithStatus(error, 401)) {
           setSettings(defaultSettings)
@@ -353,13 +413,17 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (user && authPermissions) {
-      setSettings(prev => ({
-        ...prev,
-        permissions: {
-          ...prev.permissions,
-          [user.role]: authPermissions,
-        },
-      }))
+      setSettings(prev => {
+        const nextSettings = {
+          ...prev,
+          permissions: {
+            ...prev.permissions,
+            [user.role]: authPermissions,
+          },
+        }
+        writeStoredSettings(nextSettings)
+        return nextSettings
+      })
     }
   }, [user, authPermissions])
 
@@ -378,6 +442,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }
 
     setSettings(nextSettings)
+    writeStoredSettings(nextSettings)
 
     const payload: Record<string, unknown> = {}
     if (updates.store) payload.store = nextSettings.store
@@ -488,19 +553,31 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const refreshPrinterStatus = useCallback(async (id: string) => {
-    // Simulate checking printer status
     await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    // Random status for demo
-    const statuses: PrinterDevice['status'][] = ['online', 'offline', 'error']
-    const randomStatus = statuses[Math.floor(Math.random() * statuses.length)]
-    
-    setSettings(prev => ({
-      ...prev,
-      printers: prev.printers.map(p => 
-        p.id === id ? { ...p, status: randomStatus } : p
-      ),
-    }))
+
+    setSettings(prev => {
+      const nextSettings = {
+        ...prev,
+        printers: prev.printers.map(printer => {
+          if (printer.id !== id) {
+            return printer
+          }
+
+          let status: PrinterDevice['status'] = 'online'
+          if (printer.connectionType === 'network') {
+            if (!printer.ipAddress) {
+              status = 'offline'
+            } else if (!printer.port || printer.port <= 0) {
+              status = 'error'
+            }
+          }
+
+          return { ...printer, status }
+        }),
+      }
+      writeStoredSettings(nextSettings)
+      return nextSettings
+    })
   }, [])
 
   // Permission management
@@ -561,6 +638,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   const resetToDefaults = useCallback(() => {
     setSettings(defaultSettings)
+    writeStoredSettings(defaultSettings)
   }, [])
 
   return (
