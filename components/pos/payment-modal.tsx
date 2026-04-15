@@ -60,8 +60,19 @@ export function PaymentModal({ open, onClose }: PaymentModalProps) {
   const [isProcessing, setIsProcessing] = useState(false)
   const [isComplete, setIsComplete] = useState(false)
   const [invoiceNo, setInvoiceNo] = useState('')
+  const [receipt, setReceipt] = useState<{
+    itemsCount: number
+    subtotal: number
+    discount: number
+    total: number
+    paymentType: PaymentType
+    amountPaid: number
+    changeGiven: number
+    invoiceNo: string
+  } | null>(null)
 
-  const change = paymentType === 'cash' ? Math.max(0, amountReceived - total) : 0
+  const amountTendered = paymentType === 'cash' ? amountReceived : total
+  const change = paymentType === 'cash' ? Math.max(0, amountTendered - total) : 0
   const canProceed = paymentType === 'cash' ? amountReceived >= total : true
 
   const handlePayment = async () => {
@@ -112,6 +123,20 @@ export function PaymentModal({ open, onClose }: PaymentModalProps) {
       return
     }
 
+    const amountPaid = paymentType === 'cash' ? amountReceived : total
+    const changeGiven = paymentType === 'cash' ? Math.max(0, amountPaid - total) : 0
+
+    setReceipt({
+      itemsCount: items.length,
+      subtotal,
+      discount,
+      total,
+      paymentType,
+      amountPaid,
+      changeGiven,
+      invoiceNo: savedTransaction.invoiceNo,
+    })
+
     clearCart()
     await refreshInventory()
     setInvoiceNo(savedTransaction.invoiceNo)
@@ -129,6 +154,7 @@ export function PaymentModal({ open, onClose }: PaymentModalProps) {
     setAmountReceived(0)
     setPaymentType('cash')
     setInvoiceNo('')
+    setReceipt(null)
     onClose()
   }
 
@@ -255,7 +281,7 @@ export function PaymentModal({ open, onClose }: PaymentModalProps) {
               </div>
               <DialogTitle>Payment Complete!</DialogTitle>
               <DialogDescription>
-                Transaction {invoiceNo} completed successfully
+                Transaction {receipt?.invoiceNo ?? invoiceNo} completed successfully
               </DialogDescription>
             </DialogHeader>
 
@@ -264,32 +290,36 @@ export function PaymentModal({ open, onClose }: PaymentModalProps) {
               <div className="bg-muted/50 rounded-lg p-4 space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Items</span>
-                  <span>{items.length}</span>
+                  <span>{receipt?.itemsCount ?? 0}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Subtotal</span>
-                  <span className="tabular-nums">{formatPeso(subtotal)}</span>
+                  <span className="tabular-nums">{formatPeso(receipt?.subtotal ?? 0)}</span>
                 </div>
-                {discount > 0 && (
+                {(receipt?.discount ?? 0) > 0 && (
                   <div className="flex justify-between text-green-600 dark:text-green-400">
                     <span>Discount</span>
-                    <span className="tabular-nums">-{formatPeso(discount)}</span>
+                    <span className="tabular-nums">-{formatPeso(receipt?.discount ?? 0)}</span>
                   </div>
                 )}
                 <Separator />
                 <div className="flex justify-between font-bold">
-                  <span>Total Paid</span>
-                  <span className="tabular-nums">{formatPeso(total)}</span>
+                  <span>Total Due</span>
+                  <span className="tabular-nums">{formatPeso(receipt?.total ?? 0)}</span>
                 </div>
-                {paymentType === 'cash' && change > 0 && (
-                  <div className="flex justify-between text-green-600 dark:text-green-400">
-                    <span>Change Given</span>
-                    <span className="tabular-nums">{formatPeso(change)}</span>
-                  </div>
-                )}
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">
+                    {receipt?.paymentType === 'cash' ? 'Cash Received' : 'Amount Paid'}
+                  </span>
+                  <span className="tabular-nums">{formatPeso(receipt?.amountPaid ?? 0)}</span>
+                </div>
+                <div className="flex justify-between text-green-600 dark:text-green-400">
+                  <span>Change Given</span>
+                  <span className="tabular-nums">{formatPeso(receipt?.changeGiven ?? 0)}</span>
+                </div>
                 <div className="flex justify-between text-muted-foreground">
                   <span>Payment</span>
-                  <span className="capitalize">{paymentType}</span>
+                  <span className="capitalize">{receipt?.paymentType ?? paymentType}</span>
                 </div>
               </div>
             </div>
