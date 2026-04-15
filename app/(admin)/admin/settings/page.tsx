@@ -43,10 +43,14 @@ export default function SettingsPage() {
   
   const [showSaveDialog, setShowSaveDialog] = useState(false)
 
-  const handleSave = () => {
-    saveSettings()
+  const handleSave = async () => {
+    const saved = await saveSettings()
     setShowSaveDialog(false)
-    toast.success("Settings saved successfully")
+    if (saved) {
+      toast.success("Settings saved successfully")
+      return
+    }
+    toast.error("Failed to save settings")
   }
 
   return (

@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/table'
 import { Progress } from '@/components/ui/progress'
 import { DatePickerWithRange } from '@/components/shared/date-range-picker'
-import { formatCurrency } from '@/lib/utils/currency'
+import { formatCurrency, formatPesoShort } from '@/lib/utils/currency'
 import { useTransactions } from '@/contexts/transaction-context'
 import { useProducts } from '@/contexts/products-context'
 import type { Transaction } from '@/lib/types'
@@ -258,43 +258,49 @@ export default function ItemsAnalyticsPage() {
           <CardDescription>Products ranked by total revenue</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="h-[350px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart 
-                data={topItems} 
-                layout="vertical"
-                margin={{ left: 120, right: 20 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" horizontal={true} vertical={false} />
-                <XAxis 
-                  type="number"
-                  className="text-xs"
-                  tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                  tickFormatter={(value: any) => `₱${(value / 1000).toFixed(0)}k`}
-                />
-                <YAxis 
-                  type="category"
-                  dataKey="name"
-                  className="text-xs"
-                  tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                  width={110}
-                />
-                <Tooltip 
-                  formatter={((value: any) => [formatCurrency(value), 'Revenue']) as any}
-                  contentStyle={{
-                    backgroundColor: 'hsl(var(--background))',
-                    border: '1px solid hsl(var(--border))',
-                    borderRadius: '8px',
-                  }}
-                />
-                <Bar dataKey="revenue" radius={[0, 4, 4, 0]}>
-                  {topItems.map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          {topItems.length > 0 ? (
+            <div className="h-[350px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={topItems}
+                  layout="vertical"
+                  margin={{ left: 120, right: 20 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" horizontal={true} vertical={false} />
+                  <XAxis
+                    type="number"
+                    className="text-xs"
+                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                    tickFormatter={(value: any) => formatPesoShort(Number(value))}
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    className="text-xs"
+                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                    width={110}
+                  />
+                  <Tooltip
+                    formatter={((value: any) => [formatCurrency(value), 'Revenue']) as any}
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--background))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px',
+                    }}
+                  />
+                  <Bar dataKey="revenue" radius={[0, 4, 4, 0]}>
+                    {topItems.map((_, index) => (
+                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="flex h-[350px] items-center justify-center text-center text-sm text-muted-foreground">
+              No item sales data is available for the selected period.
+            </div>
+          )}
         </CardContent>
       </Card>
 

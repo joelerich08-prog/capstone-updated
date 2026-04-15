@@ -120,9 +120,13 @@ export default function AccessControlPage() {
     toast.success(`${enable ? 'Enabled' : 'Disabled'} all ${moduleConfig?.label || module} permissions for ${role}`)
   }
 
-  const handleSave = () => {
-    saveSettings()
+  const handleSave = async () => {
+    const saved = await saveSettings()
     setShowSaveDialog(false)
+    if (!saved) {
+      toast.error("Failed to save access control settings")
+      return
+    }
     toast.success("Access control settings saved successfully")
     setHasChanges(false)
   }
@@ -141,7 +145,7 @@ export default function AccessControlPage() {
   }
 
   return (
-    <DashboardShell title="Access Control" description="Manage role-based permissions and access levels">
+    <DashboardShell title="Access Control" description="Manage role-based permissions and access levels" allowedRoles={['admin']}>
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-4">
           {roles.map((role) => (

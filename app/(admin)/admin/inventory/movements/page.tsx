@@ -1,16 +1,16 @@
-﻿'use client'
+'use client'
 
 import { DashboardShell } from '@/components/layout/dashboard-shell'
-import { StockMovementHistory } from '@/components/shared/stock-movement-history'
+import { InventoryOperationsTabs } from '@/components/shared/inventory-operations-tabs'
 
 export default function MovementsPage() {
   return (
     <DashboardShell
-      title="Stock Movements"
-      description="Track all inventory changes and movements"
+      title="Inventory Operations"
+      description="Manage receiving, breakdowns, transfers, adjustments, and movement history"
       allowedRoles={['admin', 'stockman']}
     >
-      <StockMovementHistory />
+      <InventoryOperationsTabs scope="admin" />
     </DashboardShell>
   )
 }

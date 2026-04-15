@@ -1,15 +1,15 @@
-﻿'use client'
+'use client'
 
 import { StockmanShell } from '@/components/layout/stockman-shell'
-import { StockAdjustmentPanel } from '@/components/shared/stock-adjustments-panel'
+import { InventoryOperationsTabs } from '@/components/shared/inventory-operations-tabs'
 
 export default function StockmanAdjustmentsPage() {
   return (
     <StockmanShell
-      title="Stock Adjustments"
-      description="Record inventory adjustments for damages, expiry, or corrections"
+      title="Inventory Operations"
+      description="Manage receiving, breakdowns, transfers, adjustments, and movement history"
     >
-      <StockAdjustmentPanel />
+      <InventoryOperationsTabs scope="stockman" />
     </StockmanShell>
   )
 }

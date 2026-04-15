@@ -202,7 +202,7 @@ export default function OrdersPage() {
         unitPrice: item.unitPrice,
       })),
       total: calculateTotal(),
-      status: 'preparing',
+      status: 'pending',
       notes: notes.trim() || undefined,
     })
 
@@ -432,7 +432,7 @@ export default function OrdersPage() {
                         Complete
                       </Button>
                     )}
-                    {selectedOrder.status !== 'ready' && (
+                    {(selectedOrder.status === 'pending' || selectedOrder.status === 'preparing' || selectedOrder.status === 'ready') && (
                       <Button
                         variant="outline"
                         className="text-destructive"

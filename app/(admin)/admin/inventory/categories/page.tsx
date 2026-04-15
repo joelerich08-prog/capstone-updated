@@ -141,6 +141,11 @@ export default function CategoriesPage() {
   }
 
   const handleDeleteClick = (cat: Category) => {
+    const productCount = products.filter(p => p.categoryId === cat.id).length
+    if (productCount > 0) {
+      toast.error(`Cannot delete category while ${productCount} product(s) are still assigned`)
+      return
+    }
     setSelectedCategory(cat)
     setIsDeleteOpen(true)
   }

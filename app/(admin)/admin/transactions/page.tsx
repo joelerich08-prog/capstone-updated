@@ -22,6 +22,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -36,6 +46,7 @@ import {
 import { Calendar } from '@/components/ui/calendar'
 import { useTransactions } from '@/contexts/transaction-context'
 import { useUsers } from '@/contexts/users-context'
+import { useInventory } from '@/contexts/inventory-context'
 import { formatPeso } from '@/lib/utils/currency'
 import { format, startOfDay, endOfDay, subDays, isWithinInterval } from 'date-fns'
 import { usePagination } from '@/hooks/use-pagination'
@@ -51,9 +62,11 @@ import {
   Receipt,
   TrendingUp,
   Users,
+  Undo2,
 } from 'lucide-react'
 import type { Transaction } from '@/lib/types'
 import type { DateRange } from 'react-day-picker'
+import { toast } from 'sonner'
 
 const paymentMethodConfig: Record<string, { label: string; icon: React.ElementType; color: string }> = {
   cash: { label: 'Cash', icon: Banknote, color: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' },
@@ -61,17 +74,34 @@ const paymentMethodConfig: Record<string, { label: string; icon: React.ElementTy
   maya: { label: 'Maya', icon: CreditCard, color: 'bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20' },
 }
 
+const transactionStatusConfig: Record<string, { label: string; color: string }> = {
+  completed: { label: 'Completed', color: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' },
+  refunded: { label: 'Refunded', color: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' },
+  cancelled: { label: 'Cancelled', color: 'bg-destructive/10 text-destructive border-destructive/20' },
+}
+
 export default function TransactionsPage() {
-  const { transactions } = useTransactions()
+  const { transactions, refundTransaction } = useTransactions()
+  const { refreshInventory } = useInventory()
   const { users } = useUsers()
   const [search, setSearch] = useState('')
   const [paymentFilter, setPaymentFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
   const [cashierFilter, setCashierFilter] = useState<string>('all')
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: subDays(new Date(), 7),
     to: new Date(),
   })
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null)
+  const [refundTarget, setRefundTarget] = useState<Transaction | null>(null)
+  const [isRefunding, setIsRefunding] = useState(false)
+
+  const hasActiveFilters =
+    search !== '' ||
+    paymentFilter !== 'all' ||
+    statusFilter !== 'all' ||
+    cashierFilter !== 'all' ||
+    !!dateRange?.from
 
   // Get cashier name from user ID
   const getCashierName = useCallback((cashierId: string): string => {
@@ -102,6 +132,8 @@ export default function TransactionsPage() {
       // Payment method filter
       const matchesPayment = paymentFilter === 'all' || txn.paymentType === paymentFilter
 
+      const matchesStatus = statusFilter === 'all' || txn.status === statusFilter
+
       // Cashier filter
       const matchesCashier = cashierFilter === 'all' || txn.cashierId === cashierFilter
 
@@ -114,30 +146,33 @@ export default function TransactionsPage() {
         matchesDate = isWithinInterval(txnDate, { start: from, end: to })
       }
 
-      return matchesSearch && matchesPayment && matchesCashier && matchesDate
+      return matchesSearch && matchesPayment && matchesStatus && matchesCashier && matchesDate
     })
-  }, [search, paymentFilter, cashierFilter, dateRange, transactions])
+  }, [search, paymentFilter, statusFilter, cashierFilter, dateRange, transactions])
 
   const pagination = usePagination(filteredTransactions, { itemsPerPage: 10 })
 
   // Calculate summary stats
   const stats = useMemo(() => {
-    const totalSales = filteredTransactions.reduce((sum, txn) => sum + txn.total, 0)
-    const totalTransactions = filteredTransactions.length
+    const completedTransactions = filteredTransactions.filter(txn => txn.status === 'completed')
+    const refundedTransactions = filteredTransactions.filter(txn => txn.status === 'refunded')
+    const totalSales = completedTransactions.reduce((sum, txn) => sum + txn.total, 0)
+    const totalTransactions = completedTransactions.length
     const avgTransaction = totalTransactions > 0 ? totalSales / totalTransactions : 0
+    const refundedTotal = refundedTransactions.reduce((sum, txn) => sum + txn.total, 0)
 
-    const paymentBreakdown = filteredTransactions.reduce((acc, txn) => {
+    const paymentBreakdown = completedTransactions.reduce((acc, txn) => {
       acc[txn.paymentType] = (acc[txn.paymentType] || 0) + txn.total
       return acc
     }, {} as Record<string, number>)
 
-    return { totalSales, totalTransactions, avgTransaction, paymentBreakdown }
+    return { totalSales, totalTransactions, avgTransaction, refundedTotal, refundedCount: refundedTransactions.length, paymentBreakdown }
   }, [filteredTransactions])
 
   const handleExport = () => {
     const escapeCsv = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`
     const csvContent = [
-      ['Invoice', 'Date', 'Time', 'Cashier', 'Items', 'Payment', 'Total'].map(escapeCsv).join(','),
+      ['Invoice', 'Date', 'Time', 'Cashier', 'Items', 'Payment', 'Status', 'Total'].map(escapeCsv).join(','),
       ...filteredTransactions.map(txn => [
         escapeCsv(txn.invoiceNo),
         escapeCsv(format(new Date(txn.createdAt), 'yyyy-MM-dd')),
@@ -145,6 +180,7 @@ export default function TransactionsPage() {
         escapeCsv(getCashierName(txn.cashierId)),
         escapeCsv(txn.items.map(item => `${item.quantity}x ${item.productName}${item.variantName ? ` (${item.variantName})` : ''}`).join('; ')),
         escapeCsv(txn.paymentType),
+        escapeCsv(txn.status),
         escapeCsv(txn.total.toFixed(2)),
       ].join(','))
     ].join('\n')
@@ -154,8 +190,31 @@ export default function TransactionsPage() {
     const a = document.createElement('a')
     a.href = url
     a.download = `transactions-${format(new Date(), 'yyyy-MM-dd')}.csv`
+    document.body.appendChild(a)
     a.click()
+    document.body.removeChild(a)
     URL.revokeObjectURL(url)
+  }
+
+  const handleRefund = async () => {
+    if (!refundTarget) {
+      return
+    }
+
+    setIsRefunding(true)
+    const result = await refundTransaction(refundTarget.id)
+
+    if (!result.success) {
+      setIsRefunding(false)
+      toast.error(result.error || 'Refund failed')
+      return
+    }
+
+    await refreshInventory()
+    setSelectedTransaction(prev => prev && prev.id === refundTarget.id ? { ...prev, status: 'refunded' } : prev)
+    setRefundTarget(null)
+    setIsRefunding(false)
+    toast.success(`Refunded ${refundTarget.invoiceNo} and restored stock`)
   }
 
   return (
@@ -225,6 +284,12 @@ export default function TransactionsPage() {
                     <span className="tabular-nums font-medium">{formatPeso(total)}</span>
                   </div>
                 ))}
+                <div className="flex justify-between text-sm pt-2 border-t">
+                  <span>Refunded</span>
+                  <span className="tabular-nums font-medium text-amber-600 dark:text-amber-400">
+                    {stats.refundedCount > 0 ? `-${formatPeso(stats.refundedTotal)}` : formatPeso(0)}
+                  </span>
+                </div>
               </div>
             </div>
           </CardContent>
@@ -286,6 +351,18 @@ export default function TransactionsPage() {
               </SelectContent>
             </Select>
 
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="refunded">Refunded</SelectItem>
+                <SelectItem value="cancelled">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
+
             <Select value={cashierFilter} onValueChange={setCashierFilter}>
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="Cashier" />
@@ -299,6 +376,21 @@ export default function TransactionsPage() {
                 ))}
               </SelectContent>
             </Select>
+
+            {hasActiveFilters && (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setSearch('')
+                  setPaymentFilter('all')
+                  setStatusFilter('all')
+                  setCashierFilter('all')
+                  setDateRange(undefined)
+                }}
+              >
+                Clear Filters
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -314,6 +406,7 @@ export default function TransactionsPage() {
                 <TableHead>Cashier</TableHead>
                 <TableHead>Items</TableHead>
                 <TableHead>Payment</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead className="text-right">Subtotal</TableHead>
                 <TableHead className="text-right">Discount</TableHead>
                 <TableHead className="text-right">Total</TableHead>
@@ -323,6 +416,7 @@ export default function TransactionsPage() {
             <TableBody>
               {pagination.paginatedItems.map(txn => {
                 const paymentConfig = paymentMethodConfig[txn.paymentType]
+                const statusConfig = transactionStatusConfig[txn.status] ?? transactionStatusConfig.completed
                 const PaymentIcon = paymentConfig?.icon || Banknote
                 return (
                   <TableRow key={txn.id}>
@@ -345,11 +439,16 @@ export default function TransactionsPage() {
                         {paymentConfig?.label}
                       </Badge>
                     </TableCell>
+                    <TableCell>
+                      <Badge className={`text-xs ${statusConfig.color}`}>
+                        {statusConfig.label}
+                      </Badge>
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">{formatPeso(txn.subtotal)}</TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">
                       {txn.discount > 0 ? `-${formatPeso(txn.discount)}` : '-'}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums font-medium">{formatPeso(txn.total)}</TableCell>
+                    <TableCell className={`text-right tabular-nums font-medium ${txn.status === 'refunded' ? 'text-muted-foreground line-through' : ''}`}>{formatPeso(txn.total)}</TableCell>
                     <TableCell>
                       <Button
                         variant="ghost"
@@ -398,6 +497,9 @@ export default function TransactionsPage() {
                   <Badge className={paymentMethodConfig[selectedTransaction.paymentType]?.color}>
                     {paymentMethodConfig[selectedTransaction.paymentType]?.label}
                   </Badge>
+                  <Badge className={transactionStatusConfig[selectedTransaction.status]?.color ?? transactionStatusConfig.completed.color}>
+                    {transactionStatusConfig[selectedTransaction.status]?.label ?? selectedTransaction.status}
+                  </Badge>
                 </DialogTitle>
                 <DialogDescription>
                   {format(new Date(selectedTransaction.createdAt), 'PPP p')}
@@ -440,14 +542,44 @@ export default function TransactionsPage() {
                   )}
                   <div className="flex justify-between font-bold">
                     <span>Total</span>
-                    <span className="tabular-nums">{formatPeso(selectedTransaction.total)}</span>
+                    <span className={`tabular-nums ${selectedTransaction.status === 'refunded' ? 'text-muted-foreground line-through' : ''}`}>{formatPeso(selectedTransaction.total)}</span>
                   </div>
                 </div>
+
+                {selectedTransaction.status === 'completed' && (
+                  <Button
+                    variant="outline"
+                    className="w-full text-amber-600 border-amber-500/30 hover:text-amber-700"
+                    onClick={() => setRefundTarget(selectedTransaction)}
+                  >
+                    <Undo2 className="size-4 mr-2" />
+                    Refund And Restore Stock
+                  </Button>
+                )}
               </div>
             </>
           )}
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!refundTarget} onOpenChange={(open) => !open && !isRefunding && setRefundTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Refund Transaction?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {refundTarget
+                ? `This will mark ${refundTarget.invoiceNo} as refunded and return its sold quantities back to inventory.`
+                : 'This will mark the selected transaction as refunded and restore inventory.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isRefunding}>Keep Transaction</AlertDialogCancel>
+            <AlertDialogAction onClick={handleRefund} disabled={isRefunding}>
+              {isRefunding ? 'Refunding...' : 'Confirm Refund'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardShell>
   )
 }

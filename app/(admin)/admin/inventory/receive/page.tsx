@@ -1,16 +1,16 @@
-﻿'use client'
+'use client'
 
 import { DashboardShell } from '@/components/layout/dashboard-shell'
-import { ReceiveStockPanel } from '@/components/shared/receive-stock-panel'
+import { InventoryOperationsTabs } from '@/components/shared/inventory-operations-tabs'
 
 export default function ReceiveStockPage() {
   return (
     <DashboardShell
-      title="Receive Stock"
-      description="Record incoming inventory from suppliers with batch tracking"
+      title="Inventory Operations"
+      description="Manage receiving, breakdowns, transfers, adjustments, and movement history"
       allowedRoles={['admin', 'stockman']}
     >
-      <ReceiveStockPanel />
+      <InventoryOperationsTabs scope="admin" />
     </DashboardShell>
   )
 }

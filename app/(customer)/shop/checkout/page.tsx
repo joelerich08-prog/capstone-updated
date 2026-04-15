@@ -151,7 +151,7 @@ export default function CheckoutPage() {
     // Verify product availability and prices before processing payment
     // This prevents selling items that no longer exist or price mismatches
     for (const item of items) {
-      const inventory = getInventory(item.productId)
+      const inventory = getInventory(item.productId, item.variantId)
       if (!inventory) {
         setFormError(`Product "${item.productName}" is no longer available`)
         setIsProcessing(false)
@@ -203,7 +203,7 @@ export default function CheckoutPage() {
 
     // Deduct inventory FIRST before creating order
     const customerName = user?.name || formData.name
-    const deductedItems: Array<{productId: string; tier: InventoryTier; quantity: number}> = []
+    const deductedItems: Array<{productId: string; variantId?: string; tier: InventoryTier; quantity: number}> = []
     let inventoryError = false
     let errorMessage = ""
     
@@ -221,7 +221,8 @@ export default function CheckoutPage() {
         -item.quantity,
         'Sale',
         `Customer order - Sold ${item.quantity} ${item.unitLabel || 'unit(s)'}`,
-        customerName
+        customerName,
+        item.variantId,
       )
       
       if (!result.success) {
@@ -230,7 +231,7 @@ export default function CheckoutPage() {
         break
       }
       
-      deductedItems.push({ productId: item.productId, tier, quantity: item.quantity })
+      deductedItems.push({ productId: item.productId, variantId: item.variantId, tier, quantity: item.quantity })
     }
 
     // If any inventory deduction failed, rollback previous deductions
@@ -242,7 +243,8 @@ export default function CheckoutPage() {
           deducted.quantity, // Add back the quantity
           'Rollback',
           `Rollback for failed order`,
-          customerName
+          customerName,
+          deducted.variantId,
         )
       }
       setIsProcessing(false)
@@ -262,7 +264,8 @@ export default function CheckoutPage() {
           deducted.quantity,
           'Rollback',
           `Rollback for failed order creation`,
-          customerName
+          customerName,
+          deducted.variantId,
         )
       }
       setIsProcessing(false)

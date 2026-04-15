@@ -1,16 +1,16 @@
-﻿'use client'
+'use client'
 
 import { DashboardShell } from '@/components/layout/dashboard-shell'
-import { StockTransferPanel } from '@/components/shared/stock-transfer-panel'
+import { InventoryOperationsTabs } from '@/components/shared/inventory-operations-tabs'
 
 export default function TransferPage() {
   return (
     <DashboardShell
-      title="Stock Transfer"
-      description="Transfer stock from retail storage to store shelf"
+      title="Inventory Operations"
+      description="Manage receiving, breakdowns, transfers, adjustments, and movement history"
       allowedRoles={['admin', 'stockman']}
     >
-      <StockTransferPanel />
+      <InventoryOperationsTabs scope="admin" />
     </DashboardShell>
   )
 }

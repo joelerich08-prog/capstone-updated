@@ -6,7 +6,7 @@ import { DashboardShell } from '@/components/layout/dashboard-shell'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { formatCurrency } from '@/lib/utils/currency'
+import { formatCurrency, formatPesoShort } from '@/lib/utils/currency'
 import { useProducts } from '@/contexts/products-context'
 import { useTransactions } from '@/contexts/transaction-context'
 import { useInventory } from '@/contexts/inventory-context'
@@ -246,7 +246,7 @@ export default function ForecastPage() {
                 <YAxis 
                   className="text-xs"
                   tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                  tickFormatter={(value: any) => `₱${(value / 1000).toFixed(0)}k`}
+                  tickFormatter={(value: any) => formatPesoShort(Number(value))}
                 />
                 <Tooltip 
                   formatter={((value: any, name: any) => [

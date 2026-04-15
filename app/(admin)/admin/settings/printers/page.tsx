@@ -72,12 +72,9 @@ const connectionIcons = {
 export default function PrintersPage() {
   const { 
     settings, 
-    addPrinter, 
-    updatePrinter, 
-    removePrinter, 
-    setDefaultPrinter, 
     refreshPrinterStatus,
     updatePrintSettings,
+    updateSettings,
     saveSettings 
   } = useSettings()
   
@@ -117,23 +114,43 @@ export default function PrintersPage() {
     }
   }
 
-  const handleSetDefault = (printerId: string) => {
-    setDefaultPrinter(printerId)
+  const handleSetDefault = async (printerId: string) => {
+    const saved = await updateSettings({
+      printers: settings.printers.map(printer => ({
+        ...printer,
+        isDefault: printer.id === printerId,
+      })),
+    })
+    if (!saved) {
+      toast.error("Failed to save default printer")
+      return
+    }
     toast.success("Default printer updated")
   }
 
-  const handleAddPrinter = (e: React.FormEvent) => {
+  const handleAddPrinter = async (e: React.FormEvent) => {
     e.preventDefault()
-    addPrinter({
-      name: newPrinterForm.name,
-      type: newPrinterForm.type,
-      connectionType: newPrinterForm.connectionType,
-      ipAddress: newPrinterForm.connectionType === "network" ? newPrinterForm.ipAddress : undefined,
-      port: newPrinterForm.connectionType === "network" ? parseInt(newPrinterForm.port) : undefined,
-      status: "offline",
-      isDefault: settings.printers.length === 0,
-      paperSize: newPrinterForm.paperSize,
+    const nextPrinters = [
+      ...settings.printers,
+      {
+        id: `printer_${Date.now()}`,
+        name: newPrinterForm.name,
+        type: newPrinterForm.type,
+        connectionType: newPrinterForm.connectionType,
+        ipAddress: newPrinterForm.connectionType === "network" ? newPrinterForm.ipAddress : undefined,
+        port: newPrinterForm.connectionType === "network" ? parseInt(newPrinterForm.port) : undefined,
+        status: "offline" as const,
+        isDefault: settings.printers.length === 0,
+        paperSize: newPrinterForm.paperSize,
+      },
+    ]
+    const saved = await updateSettings({
+      printers: nextPrinters,
     })
+    if (!saved) {
+      toast.error("Failed to save printer")
+      return
+    }
     setIsAddDialogOpen(false)
     setNewPrinterForm({
       name: "",
@@ -159,26 +176,50 @@ export default function PrintersPage() {
     setIsEditDialogOpen(true)
   }
 
-  const handleEditPrinter = (e: React.FormEvent) => {
+  const handleEditPrinter = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!editingPrinter) return
-    
-    updatePrinter(editingPrinter.id, {
-      name: editPrinterForm.name,
-      type: editPrinterForm.type,
-      connectionType: editPrinterForm.connectionType,
-      ipAddress: editPrinterForm.connectionType === "network" ? editPrinterForm.ipAddress : undefined,
-      port: editPrinterForm.connectionType === "network" ? parseInt(editPrinterForm.port) : undefined,
-      paperSize: editPrinterForm.paperSize,
+
+    const saved = await updateSettings({
+      printers: settings.printers.map(printer =>
+        printer.id === editingPrinter.id
+          ? {
+              ...printer,
+              name: editPrinterForm.name,
+              type: editPrinterForm.type,
+              connectionType: editPrinterForm.connectionType,
+              ipAddress: editPrinterForm.connectionType === "network" ? editPrinterForm.ipAddress : undefined,
+              port: editPrinterForm.connectionType === "network" ? parseInt(editPrinterForm.port) : undefined,
+              paperSize: editPrinterForm.paperSize,
+            }
+          : printer
+      ),
     })
+    if (!saved) {
+      toast.error("Failed to save printer changes")
+      return
+    }
     setIsEditDialogOpen(false)
     setEditingPrinter(null)
     toast.success("Printer updated successfully")
   }
 
-  const handleRemove = () => {
+  const handleRemove = async () => {
     if (!deleteConfirmPrinter) return
-    removePrinter(deleteConfirmPrinter.id)
+
+    const remainingPrinters = settings.printers.filter(printer => printer.id !== deleteConfirmPrinter.id)
+    const hasDefaultPrinter = remainingPrinters.some(printer => printer.isDefault)
+    const normalizedPrinters = remainingPrinters.map((printer, index) => ({
+      ...printer,
+      isDefault: hasDefaultPrinter ? printer.isDefault : index === 0,
+    }))
+    const saved = await updateSettings({
+      printers: normalizedPrinters,
+    })
+    if (!saved) {
+      toast.error("Failed to remove printer")
+      return
+    }
     setDeleteConfirmPrinter(null)
     toast.success("Printer removed")
   }
@@ -196,14 +237,18 @@ export default function PrintersPage() {
     toast.success("Printer status refreshed")
   }
 
-  const handleSaveSettings = () => {
-    saveSettings()
+  const handleSaveSettings = async () => {
+    const saved = await saveSettings()
     setShowSaveSettingsDialog(false)
+    if (!saved) {
+      toast.error("Failed to save print settings")
+      return
+    }
     toast.success("Print settings saved")
   }
 
   return (
-    <DashboardShell title="Printer Setup" description="Configure receipt and label printers">
+    <DashboardShell title="Printer Setup" description="Configure receipt and label printers" allowedRoles={['admin']}>
       <div className="mb-6 flex items-center justify-between">
         <Button variant="outline" onClick={handleRefresh} disabled={isRefreshing}>
           <RefreshCw className={`mr-2 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />

@@ -1,15 +1,15 @@
-﻿'use client'
+'use client'
 
 import { StockmanShell } from '@/components/layout/stockman-shell'
-import { StockTransferPanel } from '@/components/shared/stock-transfer-panel'
+import { InventoryOperationsTabs } from '@/components/shared/inventory-operations-tabs'
 
 export default function TransferPage() {
   return (
     <StockmanShell
-      title="Stock Transfer"
-      description="Transfer stock from retail storage to store shelf"
+      title="Inventory Operations"
+      description="Manage receiving, breakdowns, transfers, adjustments, and movement history"
     >
-      <StockTransferPanel />
+      <InventoryOperationsTabs scope="stockman" />
     </StockmanShell>
   )
 }

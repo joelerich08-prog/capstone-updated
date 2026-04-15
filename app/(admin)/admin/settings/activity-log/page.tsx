@@ -82,7 +82,7 @@ interface ActivityLog {
 }
 
 export default function ActivityLogPage() {
-  const { logs } = useActivityLogs()
+  const { logs, isLoading, refreshLogs } = useActivityLogs()
   const [searchQuery, setSearchQuery] = useState("")
   const [moduleFilter, setModuleFilter] = useState("all")
   const [actionFilter, setActionFilter] = useState("all")
@@ -164,17 +164,18 @@ export default function ActivityLogPage() {
   }
 
   const handleExport = () => {
+    const escapeCsv = (value: string) => `"${value.replace(/"/g, '""')}"`
     const csvContent = [
-      ["Timestamp", "User", "Role", "Action", "Module", "Details", "IP Address"].join(","),
+      ["Timestamp", "User", "Role", "Action", "Module", "Details", "IP Address"].map(escapeCsv).join(","),
       ...filteredLogs.map((log) =>
         [
-          format(log.timestamp, "yyyy-MM-dd HH:mm:ss"),
-          log.userName,
-          log.userRole,
-          log.action,
-          log.module,
-          `"${log.details}"`,
-          log.ipAddress,
+          escapeCsv(format(log.timestamp, "yyyy-MM-dd HH:mm:ss")),
+          escapeCsv(log.userName),
+          escapeCsv(log.userRole),
+          escapeCsv(log.action),
+          escapeCsv(log.module),
+          escapeCsv(log.details),
+          escapeCsv(log.ipAddress),
         ].join(",")
       ),
     ].join("\n")
@@ -185,10 +186,11 @@ export default function ActivityLogPage() {
     a.href = url
     a.download = `activity-log-${format(new Date(), "yyyy-MM-dd")}.csv`
     a.click()
+    URL.revokeObjectURL(url)
   }
 
   return (
-    <DashboardShell title="Activity Log" description="Monitor system activity and user actions">
+    <DashboardShell title="Activity Log" description="Monitor system activity and user actions" allowedRoles={['admin']}>
       <Card>
         <CardHeader>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -199,9 +201,9 @@ export default function ActivityLogPage() {
               </CardDescription>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+              <Button variant="outline" size="sm" onClick={() => void refreshLogs()} disabled={isLoading}>
                 <RefreshCw className="mr-2 h-4 w-4" />
-                Refresh
+                {isLoading ? "Refreshing..." : "Refresh"}
               </Button>
               <Button variant="outline" size="sm" onClick={handleExport}>
                 <Download className="mr-2 h-4 w-4" />
@@ -258,8 +260,10 @@ export default function ActivityLogPage() {
                 <SelectContent>
                   <SelectItem value="all">All Roles</SelectItem>
                   <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="manager">Manager</SelectItem>
                   <SelectItem value="stockman">Stockman</SelectItem>
                   <SelectItem value="cashier">Cashier</SelectItem>
+                  <SelectItem value="customer">Customer</SelectItem>
                 </SelectContent>
               </Select>
               {hasActiveFilters && (

@@ -1,6 +1,9 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
+@source not "../.next";
+@source not "../.next-clean";
+
 @custom-variant dark (&:is(.dark *));
 
 :root {

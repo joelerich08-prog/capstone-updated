@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/contexts/auth-context'
 import { useInventory } from '@/contexts/inventory-context'
@@ -49,21 +50,22 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
-import type { Product, ProductVariant } from '@/lib/types'
+import type { Product } from '@/lib/types'
 import { apiFetch } from '@/lib/api-client'
 import { formatPeso } from '@/lib/utils/currency'
-import { Plus, Search, MoreHorizontal, Edit, Trash2, Eye, X } from 'lucide-react'
+import { Plus, Search, MoreHorizontal, Edit, Trash2, Eye } from 'lucide-react'
 import { toast } from 'sonner'
 import { usePagination } from '@/hooks/use-pagination'
 import { TablePagination } from '@/components/shared/table-pagination'
 
 export default function ProductsPage() {
   const { user } = useAuth()
-  const { inventoryLevels } = useInventory()
+  const { inventoryLevels, refreshInventory } = useInventory()
   const { products: liveProducts, categories, refreshProducts } = useProducts()
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [products, setProducts] = useState<Product[]>([])
+  const [isRepairingVariantInventory, setIsRepairingVariantInventory] = useState(false)
   
   useEffect(() => {
     if (user?.role !== 'admin') {
@@ -103,6 +105,8 @@ export default function ProductsPage() {
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [isViewOpen, setIsViewOpen] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
+  const [isVariantViewOpen, setIsVariantViewOpen] = useState(false)
+  const [isVariantEditOpen, setIsVariantEditOpen] = useState(false)
   const [isDeleteOpen, setIsDeleteOpen] = useState(false)
   
   // Add form state
@@ -114,9 +118,11 @@ export default function ProductsPage() {
   const [newRetailPrice, setNewRetailPrice] = useState('')
   const [newCategory, setNewCategory] = useState('')
   const [newIsActive, setNewIsActive] = useState(true)
-  const [newVariants, setNewVariants] = useState<ProductVariant[]>([])
+  const [newCreationType, setNewCreationType] = useState<'base' | 'variant'>('base')
+  const [newBaseProductId, setNewBaseProductId] = useState('')
   const [newVariantName, setNewVariantName] = useState('')
-  const [newVariantPrice, setNewVariantPrice] = useState('')
+  const [newVariantSku, setNewVariantSku] = useState('')
+  const [newVariantPriceAdjustment, setNewVariantPriceAdjustment] = useState('')
   
   // Edit form state
   const [editName, setEditName] = useState('')
@@ -126,9 +132,11 @@ export default function ProductsPage() {
   const [editRetailPrice, setEditRetailPrice] = useState('')
   const [editCategory, setEditCategory] = useState('')
   const [editIsActive, setEditIsActive] = useState(true)
-  const [editVariants, setEditVariants] = useState<ProductVariant[]>([])
+  const [selectedVariant, setSelectedVariant] = useState<Product['variants'][number] | null>(null)
+  const [selectedVariantProduct, setSelectedVariantProduct] = useState<Product | null>(null)
   const [editVariantName, setEditVariantName] = useState('')
-  const [editVariantPrice, setEditVariantPrice] = useState('')
+  const [editVariantSku, setEditVariantSku] = useState('')
+  const [editVariantPriceAdjustment, setEditVariantPriceAdjustment] = useState('')
   
   // Show stock columns only for admin and stockman roles
   const showStockColumns = user?.role === 'admin' || user?.role === 'stockman'
@@ -143,45 +151,11 @@ export default function ProductsPage() {
     setNewRetailPrice('')
     setNewCategory('')
     setNewIsActive(true)
-    setNewVariants([])
+    setNewCreationType('base')
+    setNewBaseProductId('')
     setNewVariantName('')
-    setNewVariantPrice('')
-  }
-
-  const handleAddVariant = () => {
-    if (!newVariantName.trim()) return
-    const variant: ProductVariant = {
-      id: `var_${Date.now()}`,
-      name: newVariantName.trim(),
-      priceAdjustment: parseFloat(newVariantPrice) || 0,
-    }
-    setNewVariants(prev => [...prev, variant])
-    setNewVariantName('')
-    setNewVariantPrice('')
-  }
-
-  const handleRemoveVariant = (variantId: string) => {
-    setNewVariants(prev => prev.filter(v => v.id !== variantId))
-  }
-
-  const handleAddEditVariant = () => {
-    if (!editVariantName.trim()) {
-      toast.error('Variant name is required')
-      return
-    }
-    const variant: ProductVariant = {
-      id: `var_${Date.now()}`,
-      name: editVariantName.trim(),
-      priceAdjustment: parseFloat(editVariantPrice) || 0,
-    }
-    toast.success(`Variant "${variant.name}" added`)
-    setEditVariants(prev => [...prev, variant])
-    setEditVariantName('')
-    setEditVariantPrice('')
-  }
-
-  const handleRemoveEditVariant = (variantId: string) => {
-    setEditVariants(prev => prev.filter(v => v.id !== variantId))
+    setNewVariantSku('')
+    setNewVariantPriceAdjustment('')
   }
 
   const reloadProducts = async () => {
@@ -202,38 +176,77 @@ export default function ProductsPage() {
   }
 
   const handleAddProduct = async () => {
-    if (!newSku.trim() || !newName.trim() || !newCategory) {
-      toast.error('SKU, Name, and Category are required')
-      return
-    }
-    if (!newCostPrice || !newWholesalePrice || !newRetailPrice) {
-      toast.error('All prices are required')
-      return
+    if (newCreationType === 'variant') {
+      if (!newBaseProductId || !newVariantName.trim()) {
+        toast.error('Base product and variant name are required')
+        return
+      }
+    } else {
+      if (!newSku.trim() || !newName.trim() || !newCategory) {
+        toast.error('SKU, Name, and Category are required')
+        return
+      }
+      if (!newCostPrice || !newWholesalePrice || !newRetailPrice) {
+        toast.error('All prices are required')
+        return
+      }
     }
 
     try {
       await apiFetch('/api/products/create.php', {
         method: 'POST',
         body: {
-          sku: newSku.trim().toUpperCase(),
-          name: newName.trim(),
-          description: newDescription.trim() || undefined,
-          categoryId: newCategory,
-          variants: newVariants,
-          costPrice: parseFloat(newCostPrice),
-          wholesalePrice: parseFloat(newWholesalePrice),
-          retailPrice: parseFloat(newRetailPrice),
-          isActive: newIsActive,
+          creationType: newCreationType,
+          sku: newCreationType === 'base' ? newSku.trim().toUpperCase() : undefined,
+          name: newCreationType === 'base' ? newName.trim() : undefined,
+          description: newCreationType === 'base' ? (newDescription.trim() || undefined) : undefined,
+          categoryId: newCreationType === 'base' ? newCategory : undefined,
+          costPrice: newCreationType === 'base' ? parseFloat(newCostPrice) : undefined,
+          wholesalePrice: newCreationType === 'base' ? parseFloat(newWholesalePrice) : undefined,
+          retailPrice: newCreationType === 'base' ? parseFloat(newRetailPrice) : undefined,
+          isActive: newCreationType === 'base' ? newIsActive : undefined,
+          baseProductId: newCreationType === 'variant' ? newBaseProductId : undefined,
+          variantName: newCreationType === 'variant' ? newVariantName.trim() : undefined,
+          variantSku: newCreationType === 'variant' ? (newVariantSku.trim().toUpperCase() || undefined) : undefined,
+          variantPriceAdjustment: newCreationType === 'variant' ? (parseFloat(newVariantPriceAdjustment) || 0) : undefined,
         },
       })
 
       await reloadProducts()
       setIsAddOpen(false)
       resetAddForm()
-      toast.success('Product added successfully')
+      toast.success(newCreationType === 'variant' ? 'Variant added successfully' : 'Product added successfully')
     } catch (error) {
       const message = error instanceof Error ? error.message.replace('API request failed: ', '') : 'Failed to add product'
       toast.error(message)
+    }
+  }
+
+  const handleRepairVariantInventory = async () => {
+    try {
+      setIsRepairingVariantInventory(true)
+
+      const result = await apiFetch<{
+        success: boolean
+        message: string
+        missingCount: number
+        createdCount: number
+      }>('/api/products/backfill_variant_inventory.php', {
+        method: 'POST',
+      })
+
+      await Promise.all([reloadProducts(), refreshInventory()])
+
+      toast.success(
+        result.createdCount > 0
+          ? `Repaired ${result.createdCount} missing variant inventory row(s)`
+          : result.message,
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message.replace('API request failed: ', '') : 'Failed to repair variant inventory'
+      toast.error(message)
+    } finally {
+      setIsRepairingVariantInventory(false)
     }
   }
 
@@ -251,10 +264,16 @@ export default function ProductsPage() {
     setEditRetailPrice(product.retailPrice.toString())
     setEditCategory(product.categoryId)
     setEditIsActive(product.isActive)
-    setEditVariants([...product.variants])
-    setEditVariantName('')
-    setEditVariantPrice('')
     setIsEditOpen(true)
+  }
+
+  const handleViewVariant = (product: Product, variant: Product['variants'][number]) => {
+    setSelectedVariantProduct(product)
+    setSelectedVariant(variant)
+    setEditVariantName(variant.name)
+    setEditVariantSku(variant.sku || '')
+    setEditVariantPriceAdjustment(variant.priceAdjustment.toString())
+    setIsVariantViewOpen(true)
   }
 
   const handleSaveEdit = async () => {
@@ -272,7 +291,6 @@ export default function ProductsPage() {
           retailPrice: parseFloat(editRetailPrice),
           categoryId: editCategory,
           isActive: editIsActive,
-          variants: editVariants,
         },
       })
 
@@ -289,6 +307,48 @@ export default function ProductsPage() {
   const handleDeleteProduct = (product: Product) => {
     setSelectedProduct(product)
     setIsDeleteOpen(true)
+  }
+
+  const handleSaveVariantEdit = async () => {
+    if (!selectedVariant) return
+
+    if (!editVariantName.trim()) {
+      toast.error('Variant name is required')
+      return
+    }
+
+    try {
+      await apiFetch('/api/products/update_variant.php', {
+        method: 'POST',
+        body: {
+          id: selectedVariant.id,
+          name: editVariantName.trim(),
+          sku: editVariantSku.trim() || undefined,
+          priceAdjustment: parseFloat(editVariantPriceAdjustment) || 0,
+        },
+      })
+
+      await reloadProducts()
+      setIsVariantEditOpen(false)
+      setSelectedVariant(null)
+      setSelectedVariantProduct(null)
+      toast.success('Variant updated successfully')
+    } catch (error) {
+      const message = error instanceof Error ? error.message.replace('API request failed: ', '') : 'Failed to update variant'
+      toast.error(message)
+    }
+  }
+
+  const openVariantEditFromView = () => {
+    setIsVariantViewOpen(false)
+    setIsVariantEditOpen(true)
+  }
+
+  const closeVariantDialogs = () => {
+    setIsVariantViewOpen(false)
+    setIsVariantEditOpen(false)
+    setSelectedVariant(null)
+    setSelectedVariantProduct(null)
   }
 
   const confirmDelete = async () => {
@@ -316,6 +376,21 @@ export default function ProductsPage() {
     const matchesCategory = categoryFilter === 'all' || product.categoryId === categoryFilter
     return matchesSearch && matchesCategory
   })
+
+  const baseProductOptions = products
+    .filter(product => product.id !== selectedProduct?.id)
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  const selectedVariantInventory = selectedVariant && selectedVariantProduct
+    ? inventoryLevels.find(
+        (inv) => inv.productId === selectedVariantProduct.id && inv.variantId === selectedVariant.id,
+      )
+    : undefined
+  const selectedProductInventory = selectedProduct
+    ? inventoryLevels.find(
+        (inv) => inv.productId === selectedProduct.id && !inv.variantId,
+      )
+    : undefined
 
   const pagination = usePagination(filteredProducts, { itemsPerPage: 10 })
 
@@ -350,10 +425,19 @@ export default function ProductsPage() {
               </SelectContent>
             </Select>
             {isAdmin && (
-              <Button onClick={() => setIsAddOpen(true)}>
-                <Plus className="size-4 mr-2" />
-                Add Product
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  onClick={handleRepairVariantInventory}
+                  disabled={isRepairingVariantInventory}
+                >
+                  {isRepairingVariantInventory ? 'Repairing...' : 'Repair Variant Inventory'}
+                </Button>
+                <Button onClick={() => setIsAddOpen(true)}>
+                  <Plus className="size-4 mr-2" />
+                  Add Product
+                </Button>
+              </>
             )}
           </div>
 
@@ -398,16 +482,18 @@ export default function ProductsPage() {
                     <TableCell>
                       {product.variants.length > 0 ? (
                         <div className="flex flex-wrap gap-1">
-                          {product.variants.slice(0, 2).map(v => (
-                            <Badge key={v.id} variant="outline" className="text-xs">
+                          {product.variants.map(v => (
+                            <Button
+                              key={v.id}
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-6 px-2 text-xs"
+                              onClick={() => handleViewVariant(product, v)}
+                            >
                               {v.name}
-                            </Badge>
+                            </Button>
                           ))}
-                          {product.variants.length > 2 && (
-                            <Badge variant="outline" className="text-xs">
-                              +{product.variants.length - 2}
-                            </Badge>
-                          )}
                         </div>
                       ) : (
                         <span className="text-muted-foreground text-sm">-</span>
@@ -519,138 +605,162 @@ export default function ProductsPage() {
           <DialogHeader>
             <DialogTitle>Add New Product</DialogTitle>
             <DialogDescription>
-              Create a new product in your catalog
+              Create a base product or register a new variant under an existing product
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="newSku">SKU *</Label>
-                <Input
-                  id="newSku"
-                  placeholder="e.g., PROD-001"
-                  value={newSku}
-                  onChange={(e) => setNewSku(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Category *</Label>
-                <Select value={newCategory} onValueChange={setNewCategory}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map(cat => (
-                      <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
             <div className="space-y-2">
-              <Label htmlFor="newName">Product Name *</Label>
-              <Input
-                id="newName"
-                placeholder="Enter product name"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-              />
+              <Label>Type *</Label>
+              <Select value={newCreationType} onValueChange={(value: 'base' | 'variant') => setNewCreationType(value)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="base">Base Product</SelectItem>
+                  <SelectItem value="variant">Variant</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="newDescription">Description</Label>
-              <Input
-                id="newDescription"
-                placeholder="Brief product description"
-                value={newDescription}
-                onChange={(e) => setNewDescription(e.target.value)}
-              />
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="newCostPrice">Cost Price *</Label>
-                <Input
-                  id="newCostPrice"
-                  type="number"
-                  placeholder="0.00"
-                  value={newCostPrice}
-                  onChange={(e) => setNewCostPrice(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="newWholesalePrice">Wholesale *</Label>
-                <Input
-                  id="newWholesalePrice"
-                  type="number"
-                  placeholder="0.00"
-                  value={newWholesalePrice}
-                  onChange={(e) => setNewWholesalePrice(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="newRetailPrice">Retail *</Label>
-                <Input
-                  id="newRetailPrice"
-                  type="number"
-                  placeholder="0.00"
-                  value={newRetailPrice}
-                  onChange={(e) => setNewRetailPrice(e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Variants (Optional)</Label>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Variant name (e.g., Spicy)"
-                  value={newVariantName}
-                  onChange={(e) => setNewVariantName(e.target.value)}
-                  className="flex-1"
-                />
-                <Input
-                  type="number"
-                  placeholder="Price +/-"
-                  value={newVariantPrice}
-                  onChange={(e) => setNewVariantPrice(e.target.value)}
-                  className="w-24"
-                />
-                <Button type="button" variant="secondary" size="icon" onClick={handleAddVariant}>
-                  <Plus className="size-4" />
-                </Button>
-              </div>
-              {newVariants.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {newVariants.map(v => (
-                    <Badge key={v.id} variant="secondary" className="gap-1 pr-1">
-                      {v.name}
-                      {v.priceAdjustment !== 0 && (
-                        <span className="text-muted-foreground">
-                          ({v.priceAdjustment > 0 ? '+' : ''}{formatPeso(v.priceAdjustment)})
-                        </span>
-                      )}
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-4 ml-1 hover:bg-destructive/20"
-                        onClick={() => handleRemoveVariant(v.id)}
-                      >
-                        <X className="size-3" />
-                      </Button>
-                    </Badge>
-                  ))}
+
+            {newCreationType === 'base' ? (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="newSku">SKU *</Label>
+                    <Input
+                      id="newSku"
+                      placeholder="e.g., PROD-001"
+                      value={newSku}
+                      onChange={(e) => setNewSku(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Category *</Label>
+                    <Select value={newCategory} onValueChange={setNewCategory}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map(cat => (
+                          <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="newIsActive"
-                checked={newIsActive}
-                onChange={(e) => setNewIsActive(e.target.checked)}
-                className="size-4 rounded border-input"
-              />
-              <Label htmlFor="newIsActive">Active (available for sale)</Label>
-            </div>
+                <div className="space-y-2">
+                  <Label htmlFor="newName">Product Name *</Label>
+                  <Input
+                    id="newName"
+                    placeholder="Enter product name"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="newDescription">Description</Label>
+                  <Input
+                    id="newDescription"
+                    placeholder="Brief product description"
+                    value={newDescription}
+                    onChange={(e) => setNewDescription(e.target.value)}
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="newCostPrice">Cost Price *</Label>
+                    <Input
+                      id="newCostPrice"
+                      type="number"
+                      placeholder="0.00"
+                      value={newCostPrice}
+                      onChange={(e) => setNewCostPrice(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="newWholesalePrice">Wholesale *</Label>
+                    <Input
+                      id="newWholesalePrice"
+                      type="number"
+                      placeholder="0.00"
+                      value={newWholesalePrice}
+                      onChange={(e) => setNewWholesalePrice(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="newRetailPrice">Retail *</Label>
+                    <Input
+                      id="newRetailPrice"
+                      type="number"
+                      placeholder="0.00"
+                      value={newRetailPrice}
+                      onChange={(e) => setNewRetailPrice(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="newIsActive"
+                    checked={newIsActive}
+                    onChange={(e) => setNewIsActive(e.target.checked)}
+                    className="size-4 rounded border-input"
+                  />
+                  <Label htmlFor="newIsActive">Active (available for sale)</Label>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label>Base Product *</Label>
+                  <Select value={newBaseProductId} onValueChange={setNewBaseProductId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select base product" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {baseProductOptions.map(product => (
+                        <SelectItem key={product.id} value={product.id}>
+                          {product.name} ({product.sku})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="newVariantName">Variant Name *</Label>
+                  <Input
+                    id="newVariantName"
+                    placeholder="e.g., Spicy"
+                    value={newVariantName}
+                    onChange={(e) => setNewVariantName(e.target.value)}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="newVariantSku">Variant SKU</Label>
+                    <Input
+                      id="newVariantSku"
+                      placeholder="Optional SKU"
+                      value={newVariantSku}
+                      onChange={(e) => setNewVariantSku(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="newVariantPriceAdjustment">Price Adjustment</Label>
+                    <Input
+                      id="newVariantPriceAdjustment"
+                      type="number"
+                      placeholder="0.00"
+                      value={newVariantPriceAdjustment}
+                      onChange={(e) => setNewVariantPriceAdjustment(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  This creates the variant record and its dedicated inventory row. Stock can then be received specifically for that variant.
+                </p>
+              </>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => {
@@ -660,7 +770,7 @@ export default function ProductsPage() {
               Cancel
             </Button>
             <Button onClick={handleAddProduct}>
-              Add Product
+              {newCreationType === 'variant' ? 'Add Variant' : 'Add Product'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -729,6 +839,52 @@ export default function ProductsPage() {
                 </div>
               )}
               <div>
+                <Label className="text-muted-foreground text-xs">Base Product Stock Totals</Label>
+                <div className="mt-2 grid grid-cols-3 gap-3">
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">Wholesale</p>
+                    <p className="text-lg font-semibold tabular-nums">
+                      {selectedProductInventory?.wholesaleQty ?? 0}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {selectedProductInventory?.wholesaleUnit ?? 'box'}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">Retail</p>
+                    <p className="text-lg font-semibold tabular-nums">
+                      {selectedProductInventory?.retailQty ?? 0}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {selectedProductInventory?.retailUnit ?? 'pack'}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">Shelf</p>
+                    <p className="text-lg font-semibold tabular-nums">
+                      {selectedProductInventory?.shelfQty ?? 0}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {selectedProductInventory?.shelfUnit ?? 'pack'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-muted-foreground text-xs">Reorder Level</Label>
+                  <p className="font-medium">{selectedProductInventory?.reorderLevel ?? 0}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground text-xs">Updated At</Label>
+                  <p className="font-medium">
+                    {selectedProductInventory?.updatedAt
+                      ? new Date(selectedProductInventory.updatedAt).toLocaleString()
+                      : '-'}
+                  </p>
+                </div>
+              </div>
+              <div>
                 <Label className="text-muted-foreground text-xs">Status</Label>
                 <div className="mt-1">
                   <Badge variant={selectedProduct.isActive ? 'default' : 'secondary'}>
@@ -738,6 +894,27 @@ export default function ProductsPage() {
               </div>
             </div>
           )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsViewOpen(false)}>
+              Close
+            </Button>
+            {selectedProduct && (
+              <Button asChild variant="outline">
+                <Link
+                  href={{
+                    pathname: '/admin/inventory/movements',
+                    query: {
+                      productId: selectedProduct.id,
+                      productName: selectedProduct.name,
+                    },
+                  }}
+                  onClick={() => setIsViewOpen(false)}
+                >
+                  View Movements
+                </Link>
+              </Button>
+            )}
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -809,50 +986,6 @@ export default function ProductsPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label>Variants</Label>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Variant name (e.g., Spicy)"
-                  value={editVariantName}
-                  onChange={(e) => setEditVariantName(e.target.value)}
-                  className="flex-1"
-                />
-                <Input
-                  type="number"
-                  placeholder="Price +/-"
-                  value={editVariantPrice}
-                  onChange={(e) => setEditVariantPrice(e.target.value)}
-                  className="w-24"
-                />
-                <Button type="button" variant="secondary" size="icon" onClick={handleAddEditVariant}>
-                  <Plus className="size-4" />
-                </Button>
-              </div>
-              {editVariants.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {editVariants.map(v => (
-                    <Badge key={v.id} variant="secondary" className="gap-1 pr-1">
-                      {v.name}
-                      {v.priceAdjustment !== 0 && (
-                        <span className="text-muted-foreground">
-                          ({v.priceAdjustment > 0 ? '+' : ''}{formatPeso(v.priceAdjustment)})
-                        </span>
-                      )}
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-4 ml-1 hover:bg-destructive/20"
-                        onClick={() => handleRemoveEditVariant(v.id)}
-                      >
-                        <X className="size-3" />
-                      </Button>
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </div>
             <div className="flex items-center gap-2">
               <input
                 type="checkbox"
@@ -863,6 +996,26 @@ export default function ProductsPage() {
               />
               <Label htmlFor="editIsActive">Active</Label>
             </div>
+            {selectedProduct && selectedProduct.variants.length > 0 && (
+              <div className="space-y-2">
+                <Label>Existing Variants</Label>
+                <div className="flex flex-wrap gap-2">
+                  {selectedProduct.variants.map(v => (
+                    <Badge key={v.id} variant="outline">
+                      {v.name}
+                      {v.priceAdjustment !== 0 && (
+                        <span className="ml-1 text-muted-foreground">
+                          ({v.priceAdjustment > 0 ? '+' : ''}{formatPeso(v.priceAdjustment)})
+                        </span>
+                      )}
+                    </Badge>
+                  ))}
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Variants are now added from the Add Product modal using the Variant option so they can receive stock independently.
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditOpen(false)}>
@@ -870,6 +1023,180 @@ export default function ProductsPage() {
             </Button>
             <Button onClick={handleSaveEdit}>
               Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Variant Dialog */}
+      <Dialog open={isVariantViewOpen} onOpenChange={setIsVariantViewOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Variant Details</DialogTitle>
+            <DialogDescription>
+              View variant information before making changes
+            </DialogDescription>
+          </DialogHeader>
+          {selectedVariant && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-muted-foreground text-xs">Base Product</Label>
+                  <p className="font-medium">{selectedVariantProduct?.name || '-'}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground text-xs">Variant SKU</Label>
+                  <p className="font-mono">{selectedVariant.sku || '-'}</p>
+                </div>
+              </div>
+              <div>
+                <Label className="text-muted-foreground text-xs">Variant Name</Label>
+                <p className="font-medium">{selectedVariant.name}</p>
+              </div>
+              <div>
+                <Label className="text-muted-foreground text-xs">Price Adjustment</Label>
+                <p className="font-medium">
+                  {selectedVariant.priceAdjustment > 0 ? '+' : ''}
+                  {formatPeso(selectedVariant.priceAdjustment)}
+                </p>
+              </div>
+              <div>
+                <Label className="text-muted-foreground text-xs">Variant Stock Totals</Label>
+                <div className="mt-2 grid grid-cols-3 gap-3">
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">Wholesale</p>
+                    <p className="text-lg font-semibold tabular-nums">
+                      {selectedVariantInventory?.wholesaleQty ?? 0}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {selectedVariantInventory?.wholesaleUnit ?? 'box'}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">Retail</p>
+                    <p className="text-lg font-semibold tabular-nums">
+                      {selectedVariantInventory?.retailQty ?? 0}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {selectedVariantInventory?.retailUnit ?? 'pack'}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <p className="text-xs text-muted-foreground">Shelf</p>
+                    <p className="text-lg font-semibold tabular-nums">
+                      {selectedVariantInventory?.shelfQty ?? 0}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {selectedVariantInventory?.shelfUnit ?? 'pack'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-muted-foreground text-xs">Reorder Level</Label>
+                  <p className="font-medium">{selectedVariantInventory?.reorderLevel ?? 0}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground text-xs">Updated At</Label>
+                  <p className="font-medium">
+                    {selectedVariantInventory?.updatedAt
+                      ? new Date(selectedVariantInventory.updatedAt).toLocaleString()
+                      : '-'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={closeVariantDialogs}>
+              Close
+            </Button>
+            {selectedVariant && selectedVariantProduct && (
+              <Button asChild variant="outline">
+                <Link
+                  href={{
+                    pathname: '/admin/inventory/movements',
+                    query: {
+                      productId: selectedVariantProduct.id,
+                      productName: selectedVariantProduct.name,
+                      variantId: selectedVariant.id,
+                      variantName: selectedVariant.name,
+                    },
+                  }}
+                  onClick={closeVariantDialogs}
+                >
+                  View Movements
+                </Link>
+              </Button>
+            )}
+            <Button onClick={openVariantEditFromView}>
+              Edit Variant
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Variant Dialog */}
+      <Dialog open={isVariantEditOpen} onOpenChange={setIsVariantEditOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Variant</DialogTitle>
+            <DialogDescription>
+              Update the selected variant for {selectedVariantProduct?.name || 'this product'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Base Product</Label>
+                <Input value={selectedVariantProduct?.name || ''} disabled />
+              </div>
+              <div className="space-y-2">
+                <Label>Variant ID</Label>
+                <Input value={selectedVariant?.id || ''} disabled />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editVariantName">Variant Name</Label>
+              <Input
+                id="editVariantName"
+                value={editVariantName}
+                onChange={(e) => setEditVariantName(e.target.value)}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="editVariantSku">Variant SKU</Label>
+                <Input
+                  id="editVariantSku"
+                  value={editVariantSku}
+                  onChange={(e) => setEditVariantSku(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editVariantPriceAdjustment">Price Adjustment</Label>
+                <Input
+                  id="editVariantPriceAdjustment"
+                  type="number"
+                  value={editVariantPriceAdjustment}
+                  onChange={(e) => setEditVariantPriceAdjustment(e.target.value)}
+                />
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              This updates only the variant record. Its inventory row and movement history remain linked to the same variant ID.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={closeVariantDialogs}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleSaveVariantEdit}>
+              Save Variant
             </Button>
           </DialogFooter>
         </DialogContent>

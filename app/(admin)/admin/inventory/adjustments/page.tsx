@@ -1,16 +1,16 @@
-﻿'use client'
+'use client'
 
 import { DashboardShell } from '@/components/layout/dashboard-shell'
-import { StockAdjustmentPanel } from '@/components/shared/stock-adjustments-panel'
+import { InventoryOperationsTabs } from '@/components/shared/inventory-operations-tabs'
 
 export default function AdjustmentsPage() {
   return (
     <DashboardShell
-      title="Stock Adjustments"
-      description="Record inventory adjustments for damages, expiry, or corrections"
+      title="Inventory Operations"
+      description="Manage receiving, breakdowns, transfers, adjustments, and movement history"
       allowedRoles={['admin', 'stockman']}
     >
-      <StockAdjustmentPanel />
+      <InventoryOperationsTabs scope="admin" />
     </DashboardShell>
   )
 }

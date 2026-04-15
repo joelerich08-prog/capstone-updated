@@ -1,12 +1,15 @@
-﻿'use client'
+'use client'
 
 import { StockmanShell } from '@/components/layout/stockman-shell'
-import { StockMovementHistory } from '@/components/shared/stock-movement-history'
+import { InventoryOperationsTabs } from '@/components/shared/inventory-operations-tabs'
 
 export default function StockmanMovementsPage() {
   return (
-    <StockmanShell title="Stock Movements" description="Track all inventory changes and movements">
-      <StockMovementHistory />
+    <StockmanShell
+      title="Inventory Operations"
+      description="Manage receiving, breakdowns, transfers, adjustments, and movement history"
+    >
+      <InventoryOperationsTabs scope="stockman" />
     </StockmanShell>
   )
 }

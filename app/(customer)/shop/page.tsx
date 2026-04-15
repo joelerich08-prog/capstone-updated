@@ -73,7 +73,7 @@ export default function ShopPage() {
     unitType: PurchaseUnitType = "pack"
   ) => {
     const variant = product.variants[0]
-    const inventory = getInventory(product.id)
+    const inventory = getInventory(product.id, variant?.id)
     
     // Determine price and unit label based on unit type
     const pcsPerPack = inventory?.pcsPerPack || 6
@@ -118,7 +118,8 @@ export default function ShopPage() {
   }
 
   const openProductDialog = (product: Product) => {
-    const inventory = getInventory(product.id)
+    const variant = product.variants[0]
+    const inventory = getInventory(product.id, variant?.id)
     const packStock = inventory?.retailQty || 0
     const boxStock = inventory?.wholesaleQty || 0
     
@@ -322,7 +323,7 @@ export default function ShopPage() {
           <div className="grid gap-4 sm:gap-6 grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filteredProducts.map((product) => {
               const variant = product.variants[0]
-              const inventory = getInventory(product.id)
+              const inventory = getInventory(product.id, variant?.id)
               const pcsPerPack = inventory?.pcsPerPack || 6
               const packPrice = variant 
                 ? (product.retailPrice + variant.priceAdjustment) * pcsPerPack 
@@ -409,7 +410,7 @@ export default function ShopPage() {
           <div className="space-y-3">
             {filteredProducts.map((product) => {
               const variant = product.variants[0]
-              const inventory = getInventory(product.id)
+              const inventory = getInventory(product.id, variant?.id)
               const pcsPerPack = inventory?.pcsPerPack || 6
               const packPrice = variant 
                 ? (product.retailPrice + variant.priceAdjustment) * pcsPerPack 
@@ -525,7 +526,7 @@ export default function ShopPage() {
         <DialogContent className="sm:max-w-[480px] p-0 gap-0 rounded-2xl overflow-hidden max-h-[90vh] flex flex-col">
           {selectedProduct && (() => {
             const variant = selectedProduct.variants[0]
-            const inventory = getInventory(selectedProduct.id)
+            const inventory = getInventory(selectedProduct.id, variant?.id)
             const category = categories.find(c => c.id === selectedProduct.categoryId)
             
             // Calculate prices for each unit type

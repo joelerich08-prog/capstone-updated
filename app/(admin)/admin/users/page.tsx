@@ -58,6 +58,7 @@ import { format } from "date-fns"
 import { toast } from "sonner"
 import { usePagination } from '@/hooks/use-pagination'
 import { TablePagination } from '@/components/shared/table-pagination'
+import { useAuth } from "@/contexts/auth-context"
 
 const roleColors: Record<UserRole, string> = {
   admin: "bg-purple-500/10 text-purple-500 border-purple-500/20",
@@ -68,6 +69,7 @@ const roleColors: Record<UserRole, string> = {
 }
 
 export default function UsersPage() {
+  const { user: currentUser } = useAuth()
   const { users, isLoading, refreshUsers } = useUsers()
   const [searchQuery, setSearchQuery] = useState("")
   const [roleFilter, setRoleFilter] = useState<string>("all")
@@ -102,6 +104,11 @@ export default function UsersPage() {
   const pagination = usePagination(filteredUsers, { itemsPerPage: 10 })
 
   const handleToggleStatus = async (user: ExtendedUser) => {
+    if (currentUser?.id === user.id && user.status === "active") {
+      toast.error("You cannot deactivate your own active account")
+      return
+    }
+
     try {
       const nextIsActive = user.status !== "active"
       await apiFetch("/api/users/set_active.php", {
@@ -192,6 +199,12 @@ export default function UsersPage() {
 
   const handleDeleteUser = async () => {
     if (!deleteUser) return
+
+    if (currentUser?.id === deleteUser.id) {
+      toast.error("You cannot delete your own account")
+      return
+    }
+
     try {
       await apiFetch("/api/users/delete.php", {
         method: "POST",
@@ -207,6 +220,10 @@ export default function UsersPage() {
   }
   
   const openDeleteDialog = (user: ExtendedUser) => {
+    if (currentUser?.id === user.id) {
+      toast.error("You cannot delete your own account")
+      return
+    }
     if (user.status === "active") {
       toast.error("Cannot delete an active user. Deactivate the user first.")
       return

@@ -1,15 +1,15 @@
-﻿'use client'
+'use client'
 
 import { StockmanShell } from '@/components/layout/stockman-shell'
-import { ReceiveStockPanel } from '@/components/shared/receive-stock-panel'
+import { InventoryOperationsTabs } from '@/components/shared/inventory-operations-tabs'
 
 export default function ReceiveStockPage() {
   return (
     <StockmanShell
-      title="Receive Stock"
-      description="Record incoming inventory from suppliers"
+      title="Inventory Operations"
+      description="Manage receiving, breakdowns, transfers, adjustments, and movement history"
     >
-      <ReceiveStockPanel />
+      <InventoryOperationsTabs scope="stockman" />
     </StockmanShell>
   )
 }

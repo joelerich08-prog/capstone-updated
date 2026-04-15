@@ -174,7 +174,7 @@ export default function CashierOrdersPage() {
         unitPrice: item.unitPrice,
       })),
       total: calculateTotal(),
-      status: 'preparing',
+      status: 'pending',
       notes: notes.trim() || undefined,
     })
 

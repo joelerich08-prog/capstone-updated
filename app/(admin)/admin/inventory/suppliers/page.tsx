@@ -187,6 +187,11 @@ export default function SuppliersPage() {
   }
 
   const handleDeleteClick = (supplier: Supplier) => {
+    const linkedProductCount = suppliersWithProductCount.find(s => s.id === supplier.id)?.productCount ?? 0
+    if (linkedProductCount > 0) {
+      toast.error(`Cannot delete supplier while ${linkedProductCount} product(s) are still assigned`)
+      return
+    }
     setSupplierToDelete(supplier)
     setIsDeleteOpen(true)
   }
