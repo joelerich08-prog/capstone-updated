@@ -73,6 +73,7 @@ try {
 
     // Check if we have enough stock for removal
     if ($quantityChange < 0 && abs($quantityChange) > $currentStock) {
+        $pdo->rollBack();
         http_response_code(400);
         echo json_encode(['error' => 'Insufficient stock: cannot remove ' . abs($quantityChange) . ' units, only ' . $currentStock . ' available']);
         exit;
@@ -91,21 +92,18 @@ try {
     }
     $stmt->execute([$newQty, $inventoryId]);
 
-    // Record stock movement
-    $stmt = $pdo->prepare("
-        INSERT INTO stock_movements (id, productId, variantId, movementType, fromTier, toTier, quantity, 
-                                     reason, notes, createdBy, createdAt)
-        VALUES (?, ?, ?, 'adjustment', ?, NULL, ?, ?, ?, ?, NOW())
-    ");
-    $stmt->execute([
-        bin2hex(random_bytes(8)),
-        $productId,
-        $variantId,
-        $tier,
-        abs($quantityChange),
-        $reason,
-        $notes,
-        $userId
+    // Record stock movement. Signed quantity preserves whether stock was added or removed.
+    insertStockMovement($pdo, [
+        'id' => bin2hex(random_bytes(8)),
+        'productId' => $productId,
+        'variantId' => $variantId,
+        'movementType' => 'adjustment',
+        'fromTier' => $tier,
+        'toTier' => null,
+        'quantity' => $quantityChange,
+        'reason' => $reason,
+        'notes' => $notes,
+        'performedBy' => $userId,
     ]);
 
     // Log activity

@@ -26,27 +26,55 @@ if (!$data || !isset($data['items']) || !is_array($data['items']) || empty($data
     exit;
 }
 
-if (!isset($data['supplier']) || !isset($data['invoiceNumber'])) {
+if (!isset($data['supplierId']) || !isset($data['supplier']) || !isset($data['invoiceNumber'])) {
     http_response_code(400);
-    echo json_encode(['error' => 'Invalid input: supplier and invoiceNumber are required']);
+    echo json_encode(['error' => 'Invalid input: supplierId, supplier, and invoiceNumber are required']);
     exit;
 }
 
 $items = $data['items'];
+$supplierId = trim($data['supplierId']);
 $supplier = trim($data['supplier']);
 $invoiceNumber = trim($data['invoiceNumber']);
 
+if ($supplierId === '' || $supplier === '' || $invoiceNumber === '') {
+    http_response_code(400);
+    echo json_encode(['error' => 'Supplier and invoice number are required']);
+    exit;
+}
+
 // Validate each item
 foreach ($items as $item) {
-    if (!isset($item['productId']) || !isset($item['quantity']) || !isset($item['cost'])) {
+    if (!isset($item['productId']) || !isset($item['quantity']) || !isset($item['cost']) || !isset($item['batchNumber']) || !isset($item['expirationDate'])) {
         http_response_code(400);
-        echo json_encode(['error' => 'Invalid item: productId, quantity, and cost are required']);
+        echo json_encode(['error' => 'Invalid item: productId, quantity, cost, batchNumber, and expirationDate are required']);
         exit;
     }
     if ($item['quantity'] <= 0 || $item['cost'] < 0) {
         http_response_code(400);
         echo json_encode(['error' => 'Invalid item: quantity must be > 0 and cost must be >= 0']);
         exit;
+    }
+
+    $expirationDate = strtotime($item['expirationDate']);
+    if ($expirationDate === false || $expirationDate <= time()) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Invalid item: expirationDate must be a valid future date']);
+        exit;
+    }
+
+    if (isset($item['manufacturingDate']) && trim((string) $item['manufacturingDate']) !== '') {
+        $manufacturingDate = strtotime($item['manufacturingDate']);
+        if ($manufacturingDate === false || $manufacturingDate > time()) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Invalid item: manufacturingDate must be a valid past date']);
+            exit;
+        }
+        if ($manufacturingDate >= $expirationDate) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Invalid item: manufacturingDate must be earlier than expirationDate']);
+            exit;
+        }
     }
 }
 
@@ -55,6 +83,16 @@ $pdo = Database::getInstance();
 try {
     $pdo->beginTransaction();
 
+    $stmt = $pdo->prepare("SELECT id, name FROM suppliers WHERE id = ?");
+    $stmt->execute([$supplierId]);
+    $supplierRow = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$supplierRow) {
+        $pdo->rollBack();
+        http_response_code(404);
+        echo json_encode(['error' => 'Supplier not found']);
+        exit;
+    }
+
     $totalItems = 0;
     foreach ($items as $item) {
         $productId = trim($item['productId']);
@@ -62,9 +100,15 @@ try {
         $quantity = (int)$item['quantity'];
         $cost = (float)$item['cost'];
         $tier = isset($item['tier']) ? trim($item['tier']) : 'wholesale';
+        $batchNumber = trim((string) $item['batchNumber']);
+        $expirationDate = date('Y-m-d', strtotime($item['expirationDate']));
+        $manufacturingDate = isset($item['manufacturingDate']) && trim((string) $item['manufacturingDate']) !== ''
+            ? date('Y-m-d', strtotime($item['manufacturingDate']))
+            : null;
 
         // Validate tier
         if (!in_array($tier, ['wholesale', 'retail', 'shelf'])) {
+            $pdo->rollBack();
             http_response_code(400);
             echo json_encode(['error' => 'Invalid tier: must be wholesale, retail, or shelf']);
             exit;
@@ -74,6 +118,7 @@ try {
         $stmt = $pdo->prepare("SELECT id FROM products WHERE id = ?");
         $stmt->execute([$productId]);
         if (!$stmt->fetch()) {
+            $pdo->rollBack();
             http_response_code(404);
             echo json_encode(['error' => 'Product not found: ' . $productId]);
             exit;
@@ -95,31 +140,30 @@ try {
         $stmt->execute([$newQty, $currentInventory['id']]);
 
         // Record stock movement
-        $stmt = $pdo->prepare("
-            INSERT INTO stock_movements (id, productId, variantId, movementType, fromTier, toTier, quantity, 
-                                         reason, notes, createdBy, createdAt)
-            VALUES (?, ?, ?, 'receiving', NULL, ?, ?, ?, ?, ?, NOW())
-        ");
-        $stmt->execute([
-            bin2hex(random_bytes(8)),
-            $productId,
-            $variantId,
-            $tier,
-            $quantity,
-            'Stock received from supplier',
-            'Supplier: ' . $supplier . ' | Invoice: ' . $invoiceNumber,
-            $userId
+        insertStockMovement($pdo, [
+            'id' => bin2hex(random_bytes(8)),
+            'productId' => $productId,
+            'variantId' => $variantId,
+            'movementType' => 'receive',
+            'fromTier' => null,
+            'toTier' => $tier,
+            'quantity' => $quantity,
+            'reason' => 'Stock received from supplier',
+            'notes' => 'Supplier: ' . $supplier . ' | Invoice: ' . $invoiceNumber,
+            'performedBy' => $userId,
         ]);
 
-        // Create product batch record
+        // Create product batch record using the submitted batch metadata
         $batchId = bin2hex(random_bytes(8));
-        $batchNumber = 'RCV-' . time() . '-' . str_pad(rand(1, 999), 3, '0', STR_PAD_LEFT);
-        $expirationDate = date('Y-m-d', strtotime('+180 days'));
+        $wholesaleQty = $tier === 'wholesale' ? $quantity : 0;
+        $retailQty = $tier === 'retail' ? $quantity : 0;
+        $shelfQty = $tier === 'shelf' ? $quantity : 0;
 
         $stmt = $pdo->prepare("
             INSERT INTO product_batches (id, productId, variantId, batchNumber, expirationDate, 
-                                         receivedDate, initialQty, costPrice, supplierId, invoiceNumber, status, createdAt, updatedAt)
-            VALUES (?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, 'active', NOW(), NOW())
+                                         manufacturingDate, receivedDate, wholesaleQty, retailQty, shelfQty, initialQty,
+                                         costPrice, supplierId, invoiceNumber, status, notes, createdAt, updatedAt)
+            VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, 'active', ?, NOW(), NOW())
         ");
         $stmt->execute([
             $batchId,
@@ -127,10 +171,16 @@ try {
             $variantId,
             $batchNumber,
             $expirationDate,
+            $manufacturingDate,
+            $wholesaleQty,
+            $retailQty,
+            $shelfQty,
             $quantity,
             $cost,
-            $supplier,
+            $supplierId,
             $invoiceNumber
+            ,
+            'Supplier: ' . $supplierRow['name'],
         ]);
 
         $totalItems += $quantity;

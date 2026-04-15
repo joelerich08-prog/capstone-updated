@@ -6,6 +6,7 @@ header('Access-Control-Allow-Headers: Content-Type');
 
 require_once __DIR__ . '/../middleware/cors.php';
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../includes/inventory.php';
 
 session_start();
 
@@ -18,25 +19,37 @@ if (!isset($_SESSION['user_id'])) {
 try {
     $pdo = Database::getInstance();
 
+    $actorColumn = stockMovementsHasColumn($pdo, 'performedBy')
+        ? 'performedBy'
+        : (stockMovementsHasColumn($pdo, 'createdBy') ? 'createdBy' : null);
+
+    $performedBySelect = $actorColumn !== null
+        ? "COALESCE(u.name, sm.{$actorColumn}, 'Unknown User') AS performedBy"
+        : "'Unknown User' AS performedBy";
+
+    $joinUsers = $actorColumn !== null
+        ? "LEFT JOIN users u ON sm.{$actorColumn} = u.id"
+        : '';
+
     $stmt = $pdo->query(
-        'SELECT
+        "SELECT
             sm.id,
             sm.productId,
             sm.variantId,
             p.name AS productName,
             pv.name AS variantName,
-            sm.movementType,
+            CASE WHEN sm.movementType = 'receiving' THEN 'receive' ELSE sm.movementType END AS movementType,
             sm.fromTier,
             sm.toTier,
             sm.quantity,
             sm.reason,
-            COALESCE(u.name, sm.performedBy) AS performedBy,
+            {$performedBySelect},
             sm.createdAt
         FROM stock_movements sm
         INNER JOIN products p ON sm.productId = p.id
         LEFT JOIN product_variants pv ON sm.variantId = pv.id
-        LEFT JOIN users u ON sm.performedBy = u.id
-        ORDER BY sm.createdAt DESC'
+        {$joinUsers}
+        ORDER BY sm.createdAt DESC"
     );
 
     $movements = $stmt->fetchAll(PDO::FETCH_ASSOC);

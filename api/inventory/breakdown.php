@@ -50,6 +50,12 @@ try {
     }
 
     $packsPerBox = $inventory['packsPerBox'];
+    if ($packsPerBox <= 0) {
+        $pdo->rollBack();
+        http_response_code(400);
+        echo json_encode(['error' => 'Product does not have a valid packs-per-box conversion']);
+        exit;
+    }
     $retailQtyToAdd = $wholesaleQuantity * $packsPerBox;
 
     $stmt = $pdo->prepare("UPDATE inventory_levels SET wholesaleQty = wholesaleQty - :wholesaleQty, retailQty = retailQty + :retailQty WHERE id = :id");
@@ -61,51 +67,80 @@ try {
     $stmt->execute($updateParams);
 
     $movementId = bin2hex(random_bytes(16));
-    $stmt = $pdo->prepare("INSERT INTO stock_movements (id, productId, variantId, movementType, fromTier, toTier, quantity, performedBy) VALUES (?, ?, ?, 'breakdown', 'wholesale', 'retail', ?, ?)");
-    $stmt->execute([$movementId, $productId, $variantId, $wholesaleQuantity, $userId]);
+    insertStockMovement($pdo, [
+        'id' => $movementId,
+        'productId' => $productId,
+        'variantId' => $variantId,
+        'movementType' => 'breakdown',
+        'fromTier' => 'wholesale',
+        'toTier' => 'retail',
+        'quantity' => $wholesaleQuantity,
+        'performedBy' => $userId,
+    ]);
 
     $stmt = $pdo->prepare("SELECT name FROM users WHERE id = ?");
     $stmt->execute([$userId]);
     $userRow = $stmt->fetch(PDO::FETCH_ASSOC);
     $userName = $userRow['name'] ?? 'Unknown';
 
-    $stmt = $pdo->prepare("SELECT supplierId, costPrice FROM products WHERE id = ?");
-    $stmt->execute([$productId]);
-    $product = $stmt->fetch(PDO::FETCH_ASSOC);
+    $batchSql = "SELECT id, wholesaleQty
+        FROM product_batches
+        WHERE productId = :productId
+          AND status != 'disposed'
+          AND wholesaleQty > 0";
+    $batchParams = [':productId' => $productId];
 
-    if (!$product) {
-        $pdo->rollBack();
-        http_response_code(404);
-        echo json_encode(['error' => 'Product not found']);
-        exit;
+    if ($variantId !== null && $variantId !== '') {
+        $batchSql .= " AND variantId = :variantId";
+        $batchParams[':variantId'] = $variantId;
+    } else {
+        $batchSql .= " AND variantId IS NULL";
     }
 
-    if (empty($product['supplierId'])) {
+    $batchSql .= " ORDER BY expirationDate ASC, receivedDate ASC FOR UPDATE";
+
+    $stmt = $pdo->prepare($batchSql);
+    $stmt->execute($batchParams);
+    $batches = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $remainingWholesaleToBreakdown = $wholesaleQuantity;
+    $affectedBatchIds = [];
+
+    foreach ($batches as $batch) {
+        if ($remainingWholesaleToBreakdown <= 0) {
+            break;
+        }
+
+        $availableWholesale = (int) $batch['wholesaleQty'];
+        if ($availableWholesale <= 0) {
+            continue;
+        }
+
+        $wholesaleToBreakdown = min($remainingWholesaleToBreakdown, $availableWholesale);
+        $retailToAddForBatch = $wholesaleToBreakdown * $packsPerBox;
+
+        $updateBatchStmt = $pdo->prepare(
+            "UPDATE product_batches
+             SET wholesaleQty = wholesaleQty - :wholesaleQty,
+                 retailQty = retailQty + :retailQty
+             WHERE id = :id"
+        );
+        $updateBatchStmt->execute([
+            ':wholesaleQty' => $wholesaleToBreakdown,
+            ':retailQty' => $retailToAddForBatch,
+            ':id' => $batch['id'],
+        ]);
+
+        $remainingWholesaleToBreakdown -= $wholesaleToBreakdown;
+        $affectedBatchIds[] = $batch['id'];
+    }
+
+    if ($remainingWholesaleToBreakdown > 0) {
         $pdo->rollBack();
         http_response_code(400);
-        echo json_encode(['error' => 'Product supplier is required to create batch']);
+        echo json_encode(['error' => 'Insufficient batch stock to complete breakdown']);
         exit;
     }
-
-    $batchId = bin2hex(random_bytes(16));
-    $batchNumber = 'BREAKDOWN-' . date('Ymd-His');
-    $expirationDate = date('Y-m-d', strtotime('+6 months'));
-    $receivedDate = date('Y-m-d');
-
-    $stmt = $pdo->prepare("INSERT INTO product_batches (id, productId, variantId, batchNumber, expirationDate, receivedDate, wholesaleQty, retailQty, shelfQty, initialQty, costPrice, supplierId, invoiceNumber, status, notes) VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0, ?, ?, ?, ?, 'active', 'Generated from breakdown')");
-    $stmt->execute([
-        $batchId,
-        $productId,
-        $variantId,
-        $batchNumber,
-        $expirationDate,
-        $receivedDate,
-        $retailQtyToAdd,
-        $retailQtyToAdd,
-        $product['costPrice'],
-        $product['supplierId'],
-        'BREAKDOWN-' . date('YmdHis'),
-    ]);
 
     $activityId = bin2hex(random_bytes(16));
     $stmt = $pdo->prepare("INSERT INTO activity_logs (id, userId, userName, action, details) VALUES (?, ?, ?, 'breakdown', ?)");
@@ -122,8 +157,8 @@ try {
         'success' => true,
         'message' => 'Stock breakdown completed',
         'movementId' => $movementId,
-        'batchId' => $batchId,
         'retailQtyAdded' => $retailQtyToAdd,
+        'affectedBatchIds' => $affectedBatchIds,
     ]);
 
 } catch (Exception $e) {

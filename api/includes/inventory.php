@@ -10,6 +10,102 @@ function normalizeInventoryVariantId($variantId): ?string
     return $variantId === '' ? null : $variantId;
 }
 
+function normalizeVariantId($variantId): ?string
+{
+    return normalizeInventoryVariantId($variantId);
+}
+
+function getTableColumns(PDO $pdo, string $table): array
+{
+    static $cache = [];
+
+    if (isset($cache[$table])) {
+        return $cache[$table];
+    }
+
+    $stmt = $pdo->query("DESCRIBE {$table}");
+    $columns = [];
+
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $column) {
+        $columns[$column['Field']] = true;
+    }
+
+    $cache[$table] = $columns;
+
+    return $columns;
+}
+
+function stockMovementsHasColumn(PDO $pdo, string $column): bool
+{
+    $columns = getTableColumns($pdo, 'stock_movements');
+    return isset($columns[$column]);
+}
+
+function normalizeMovementType(string $movementType): string
+{
+    return $movementType === 'receiving' ? 'receive' : $movementType;
+}
+
+function insertStockMovement(PDO $pdo, array $movement): void
+{
+    $movementType = normalizeMovementType((string) ($movement['movementType'] ?? ''));
+    if ($movementType === '') {
+        throw new InvalidArgumentException('movementType is required');
+    }
+
+    $columns = ['id', 'productId', 'variantId', 'movementType', 'fromTier', 'toTier', 'quantity'];
+    $placeholders = ['?', '?', '?', '?', '?', '?', '?'];
+    $values = [
+        $movement['id'] ?? bin2hex(random_bytes(16)),
+        $movement['productId'] ?? null,
+        normalizeInventoryVariantId($movement['variantId'] ?? null),
+        $movementType,
+        $movement['fromTier'] ?? null,
+        $movement['toTier'] ?? null,
+        (int) ($movement['quantity'] ?? 0),
+    ];
+
+    if (stockMovementsHasColumn($pdo, 'reason')) {
+        $columns[] = 'reason';
+        $placeholders[] = '?';
+        $values[] = $movement['reason'] ?? null;
+    }
+
+    if (stockMovementsHasColumn($pdo, 'notes')) {
+        $columns[] = 'notes';
+        $placeholders[] = '?';
+        $values[] = $movement['notes'] ?? null;
+    }
+
+    $actorId = $movement['performedBy'] ?? $movement['createdBy'] ?? null;
+    if ($actorId !== null) {
+        if (stockMovementsHasColumn($pdo, 'performedBy')) {
+            $columns[] = 'performedBy';
+            $placeholders[] = '?';
+            $values[] = $actorId;
+        } elseif (stockMovementsHasColumn($pdo, 'createdBy')) {
+            $columns[] = 'createdBy';
+            $placeholders[] = '?';
+            $values[] = $actorId;
+        }
+    }
+
+    if (array_key_exists('createdAt', $movement) && stockMovementsHasColumn($pdo, 'createdAt')) {
+        $columns[] = 'createdAt';
+        $placeholders[] = '?';
+        $values[] = $movement['createdAt'];
+    }
+
+    $sql = sprintf(
+        'INSERT INTO stock_movements (%s) VALUES (%s)',
+        implode(', ', $columns),
+        implode(', ', $placeholders)
+    );
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($values);
+}
+
 function fetchInventoryLevel(PDO $pdo, string $productId, ?string $variantId = null, bool $lock = false): ?array
 {
     $variantId = normalizeInventoryVariantId($variantId);
@@ -123,13 +219,6 @@ function getOrCreateInventoryLevel(PDO $pdo, string $productId, ?string $variant
     $inventory = fetchInventoryLevel($pdo, $productId, $variantId, $lock);
     if ($inventory) {
         return $inventory;
-    }
-
-    if ($variantId !== null) {
-        $inventory = fetchInventoryLevel($pdo, $productId, null, $lock);
-        if ($inventory) {
-            return $inventory;
-        }
     }
 
     return createInventoryLevel($pdo, $productId, $variantId);

@@ -5,6 +5,7 @@ header('Access-Control-Allow-Methods: POST');
 header('Access-Control-Allow-Headers: Content-Type');
 
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../includes/inventory.php';
 
 session_start();
 
@@ -97,22 +98,8 @@ try {
         }
 
         foreach ($items as $item) {
-            $variantCondition = $item['variantId'] ? 'variantId = :variantId' : 'variantId IS NULL';
-            $params = [':productId' => $item['productId']];
-            if ($item['variantId']) {
-                $params[':variantId'] = $item['variantId'];
-            }
-
-            $stmt = $pdo->prepare("SELECT {$inventoryTier}Qty, reorderLevel FROM inventory_levels WHERE productId = :productId AND $variantCondition FOR UPDATE");
-            $stmt->execute($params);
-            $inventory = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            if (!$inventory) {
-                $pdo->rollBack();
-                http_response_code(404);
-                echo json_encode(['error' => 'Inventory record not found for product ' . $item['productId']]);
-                exit;
-            }
+            $variantId = normalizeInventoryVariantId($item['variantId'] ?? null);
+            $inventory = getOrCreateInventoryLevel($pdo, $item['productId'], $variantId, true);
 
             if ($inventory["{$inventoryTier}Qty"] < $item['quantity']) {
                 $pdo->rollBack();
@@ -121,15 +108,26 @@ try {
                 exit;
             }
 
-            $stmt = $pdo->prepare("UPDATE inventory_levels SET {$inventoryTier}Qty = {$inventoryTier}Qty - :quantity WHERE productId = :productId AND $variantCondition");
-            $stmt->execute(array_merge($params, [':quantity' => $item['quantity']]));
+            $stmt = $pdo->prepare("UPDATE inventory_levels SET {$inventoryTier}Qty = {$inventoryTier}Qty - :quantity WHERE id = :id");
+            $stmt->execute([
+                ':quantity' => $item['quantity'],
+                ':id' => $inventory['id'],
+            ]);
 
             $movementId = bin2hex(random_bytes(16));
-            $stmt = $pdo->prepare('INSERT INTO stock_movements (id, productId, variantId, movementType, fromTier, toTier, quantity, performedBy) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)');
-            $stmt->execute([$movementId, $item['productId'], $item['variantId'], 'sale', $inventoryTier, $item['quantity'], $userId]);
+            insertStockMovement($pdo, [
+                'id' => $movementId,
+                'productId' => $item['productId'],
+                'variantId' => $variantId,
+                'movementType' => 'sale',
+                'fromTier' => $inventoryTier,
+                'toTier' => null,
+                'quantity' => $item['quantity'],
+                'performedBy' => $userId,
+            ]);
 
-            $stmt = $pdo->prepare("SELECT {$inventoryTier}Qty, reorderLevel FROM inventory_levels WHERE productId = :productId AND $variantCondition");
-            $stmt->execute($params);
+            $stmt = $pdo->prepare("SELECT {$inventoryTier}Qty, reorderLevel FROM inventory_levels WHERE id = :id");
+            $stmt->execute([':id' => $inventory['id']]);
             $updatedInventory = $stmt->fetch(PDO::FETCH_ASSOC);
 
             if ($updatedInventory && $updatedInventory["{$inventoryTier}Qty"] <= $updatedInventory['reorderLevel']) {
@@ -147,14 +145,14 @@ try {
         $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         foreach ($items as $item) {
-            $variantCondition = $item['variantId'] ? 'variantId = :variantId' : 'variantId IS NULL';
-            $params = [':productId' => $item['productId']];
-            if ($item['variantId']) {
-                $params[':variantId'] = $item['variantId'];
-            }
+            $variantId = normalizeInventoryVariantId($item['variantId'] ?? null);
+            $inventory = getOrCreateInventoryLevel($pdo, $item['productId'], $variantId, true);
 
-            $stmt = $pdo->prepare("UPDATE inventory_levels SET {$inventoryTier}Qty = {$inventoryTier}Qty + :quantity WHERE productId = :productId AND $variantCondition");
-            $stmt->execute(array_merge($params, [':quantity' => $item['quantity']]));
+            $stmt = $pdo->prepare("UPDATE inventory_levels SET {$inventoryTier}Qty = {$inventoryTier}Qty + :quantity WHERE id = :id");
+            $stmt->execute([
+                ':quantity' => $item['quantity'],
+                ':id' => $inventory['id'],
+            ]);
         }
     }
 

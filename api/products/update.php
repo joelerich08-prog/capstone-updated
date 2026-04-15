@@ -25,7 +25,6 @@ $costPrice = isset($data['costPrice']) ? (float) $data['costPrice'] : null;
 $wholesalePrice = isset($data['wholesalePrice']) ? (float) $data['wholesalePrice'] : null;
 $retailPrice = isset($data['retailPrice']) ? (float) $data['retailPrice'] : null;
 $isActive = array_key_exists('isActive', $data) ? (bool) $data['isActive'] : true;
-$variants = is_array($data['variants'] ?? null) ? $data['variants'] : [];
 
 if ($productId === '' || $name === '' || $categoryId === '') {
     http_response_code(400);
@@ -76,32 +75,6 @@ try {
         $isActive ? 1 : 0,
         $productId,
     ]);
-
-    $deleteStmt = $pdo->prepare('DELETE FROM product_variants WHERE productId = ?');
-    $deleteStmt->execute([$productId]);
-
-    $variantStmt = $pdo->prepare(
-        'INSERT INTO product_variants (id, productId, name, priceAdjustment, sku) VALUES (?, ?, ?, ?, ?)'
-    );
-
-    foreach ($variants as $variant) {
-        $variantName = trim((string) ($variant['name'] ?? ''));
-        if ($variantName === '') {
-            continue;
-        }
-
-        $variantId = bin2hex(random_bytes(16));
-        $priceAdjustment = isset($variant['priceAdjustment']) ? (float) $variant['priceAdjustment'] : 0.0;
-        $variantSku = trim((string) ($variant['sku'] ?? ''));
-
-        $variantStmt->execute([
-            $variantId,
-            $productId,
-            $variantName,
-            $priceAdjustment,
-            $variantSku !== '' ? $variantSku : null,
-        ]);
-    }
 
     $pdo->commit();
 

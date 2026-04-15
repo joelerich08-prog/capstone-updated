@@ -78,8 +78,16 @@ try {
     $stmt->execute($updateParams);
 
     $movementId = bin2hex(random_bytes(16));
-    $stmt = $pdo->prepare("INSERT INTO stock_movements (id, productId, variantId, movementType, fromTier, toTier, quantity, performedBy) VALUES (?, ?, ?, 'transfer', ?, ?, ?, ?)");
-    $stmt->execute([$movementId, $productId, $variantId, $sourceTier, $destTier, $quantity, $userId]);
+    insertStockMovement($pdo, [
+        'id' => $movementId,
+        'productId' => $productId,
+        'variantId' => $variantId,
+        'movementType' => 'transfer',
+        'fromTier' => $sourceTier,
+        'toTier' => $destTier,
+        'quantity' => $quantity,
+        'performedBy' => $userId,
+    ]);
 
     $stmt = $pdo->prepare("SELECT name FROM users WHERE id = ?");
     $stmt->execute([$userId]);

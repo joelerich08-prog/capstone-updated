@@ -27,10 +27,6 @@ $discount = (float)$data['discount'];
 $total = (float)$data['total'];
 $invoiceNo = isset($data['invoiceNo']) ? trim($data['invoiceNo']) : '';
 
-if ($invoiceNo === '') {
-    $invoiceNo = 'POS-' . date('Ymd') . '-' . str_pad((string)mt_rand(1, 9999), 4, '0', STR_PAD_LEFT);
-}
-
 if (!in_array($paymentType, ['cash', 'gcash', 'maya'], true) || $subtotal < 0 || $discount < 0 || $total < 0 || empty($items)) {
     http_response_code(400);
     echo json_encode(['error' => 'Invalid data']);
@@ -42,7 +38,9 @@ $pdo = Database::getInstance();
 try {
     $pdo->beginTransaction();
 
-    $invoiceNo = 'POS-' . date('Ymd') . '-' . str_pad((string)mt_rand(1, 9999), 4, '0', STR_PAD_LEFT);
+    if ($invoiceNo === '') {
+        $invoiceNo = 'POS-' . date('Ymd') . '-' . str_pad((string)mt_rand(1, 9999), 4, '0', STR_PAD_LEFT);
+    }
     $transactionId = bin2hex(random_bytes(16));
     $createdAt = date('Y-m-d H:i:s');
 
@@ -137,6 +135,18 @@ try {
         $stmt->execute([
             ':quantity' => $quantity,
             ':id' => $inventoryId,
+        ]);
+
+        insertStockMovement($pdo, [
+            'id' => bin2hex(random_bytes(16)),
+            'productId' => $productId,
+            'variantId' => $variantId,
+            'movementType' => 'sale',
+            'fromTier' => $tier,
+            'toTier' => null,
+            'quantity' => $quantity,
+            'reason' => 'POS checkout',
+            'performedBy' => $cashierId,
         ]);
 
         $stmt = $pdo->prepare("SELECT {$quantityColumn} AS quantity, reorderLevel FROM inventory_levels WHERE id = :id");
