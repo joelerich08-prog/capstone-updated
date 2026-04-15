@@ -94,7 +94,10 @@ export default function TransactionsPage() {
       // Search filter (invoice number or product names)
       const matchesSearch = search === '' ||
         txn.invoiceNo.toLowerCase().includes(search.toLowerCase()) ||
-        txn.items.some(item => item.productName.toLowerCase().includes(search.toLowerCase()))
+        txn.items.some(item =>
+          item.productName.toLowerCase().includes(search.toLowerCase()) ||
+          (item.variantName?.toLowerCase().includes(search.toLowerCase()) ?? false)
+        )
 
       // Payment method filter
       const matchesPayment = paymentFilter === 'all' || txn.paymentType === paymentFilter
@@ -132,17 +135,17 @@ export default function TransactionsPage() {
   }, [filteredTransactions])
 
   const handleExport = () => {
-    // In a real app, this would generate and download a CSV/Excel file
+    const escapeCsv = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`
     const csvContent = [
-      ['Invoice', 'Date', 'Time', 'Cashier', 'Items', 'Payment', 'Total'].join(','),
+      ['Invoice', 'Date', 'Time', 'Cashier', 'Items', 'Payment', 'Total'].map(escapeCsv).join(','),
       ...filteredTransactions.map(txn => [
-        txn.invoiceNo,
-        format(new Date(txn.createdAt), 'yyyy-MM-dd'),
-        format(new Date(txn.createdAt), 'HH:mm'),
-        getCashierName(txn.cashierId),
-        txn.items.length,
-        txn.paymentType,
-        txn.total,
+        escapeCsv(txn.invoiceNo),
+        escapeCsv(format(new Date(txn.createdAt), 'yyyy-MM-dd')),
+        escapeCsv(format(new Date(txn.createdAt), 'HH:mm')),
+        escapeCsv(getCashierName(txn.cashierId)),
+        escapeCsv(txn.items.map(item => `${item.quantity}x ${item.productName}${item.variantName ? ` (${item.variantName})` : ''}`).join('; ')),
+        escapeCsv(txn.paymentType),
+        escapeCsv(txn.total.toFixed(2)),
       ].join(','))
     ].join('\n')
 

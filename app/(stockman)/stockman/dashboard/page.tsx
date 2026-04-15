@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { StatCard } from "@/components/shared/stat-card"
-import { mockProducts } from "@/lib/mock-data/products"
+import { useProducts } from "@/contexts/products-context"
 import { useInventory } from "@/contexts/inventory-context"
 import { Package, AlertTriangle, ArrowRightLeft, Scissors, ChevronRight, Boxes, Clock, TrendingUp, TrendingDown } from "lucide-react"
 import Link from "next/link"
@@ -20,10 +20,11 @@ const activityColors: Record<string, string> = {
 }
 
 export default function StockmanDashboardPage() {
+  const { products } = useProducts()
   const { inventoryLevels, activityLog } = useInventory()
 
   // Calculate low stock items based on actual inventory
-  const lowStockItems = mockProducts.filter(p => {
+  const lowStockItems = products.filter(p => {
     const inventory = inventoryLevels.find(inv => inv.productId === p.id)
     const storeStock = inventory?.shelfQty || 0
     const reorderLevel = inventory?.reorderLevel || 20
@@ -66,7 +67,7 @@ export default function StockmanDashboardPage() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <StatCard
             title="Total Products"
-            value={mockProducts.length.toString()}
+            value={products.length.toString()}
             icon={Package}
           />
           <StatCard

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { DashboardShell } from '@/components/layout/dashboard-shell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -27,6 +27,7 @@ import { FieldGroup, Field, FieldLabel } from '@/components/ui/field'
 import { Textarea } from '@/components/ui/textarea'
 import { useCategories } from '@/contexts/categories-context'
 import { useProducts } from '@/contexts/products-context'
+import { apiFetch } from '@/lib/api-client'
 import { Plus, Edit, Trash2, FolderOpen } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -42,8 +43,9 @@ import {
 import type { Category } from '@/lib/types'
 
 export default function CategoriesPage() {
-  const { categories, isLoading, setCategories } = useCategories()
+  const { categories: liveCategories, isLoading, refreshCategories } = useCategories()
   const { products } = useProducts()
+  const [categories, setCategories] = useState<Category[]>([])
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [isDeleteOpen, setIsDeleteOpen] = useState(false)
@@ -51,29 +53,54 @@ export default function CategoriesPage() {
   const [newCategory, setNewCategory] = useState({ name: '', description: '' })
   const [editCategory, setEditCategory] = useState({ name: '', description: '', isActive: true })
 
+  const loadCategories = async () => {
+    try {
+      const adminCategories = await apiFetch<Category[]>('/api/categories/get_admin_all.php')
+      setCategories(adminCategories)
+    } catch (error) {
+      console.error('Failed to load admin categories:', error)
+      setCategories(liveCategories)
+    }
+  }
+
+  const reloadCategories = async () => {
+    await refreshCategories()
+    await loadCategories()
+  }
+
+  useEffect(() => {
+    void loadCategories()
+  }, [liveCategories])
+
   // Count products per category
   const categoryProductCounts = categories.map(cat => ({
     ...cat,
     productCount: products.filter(p => p.categoryId === cat.id).length
   }))
 
-  const handleAddCategory = () => {
+  const handleAddCategory = async () => {
     if (!newCategory.name.trim()) {
       toast.error('Category name is required')
       return
     }
-    
-    const category: Category = {
-      id: `cat_${Date.now()}`,
-      name: newCategory.name.trim(),
-      description: newCategory.description.trim() || undefined,
-      isActive: true,
+
+    try {
+      await apiFetch('/api/categories/create.php', {
+        method: 'POST',
+        body: {
+          name: newCategory.name.trim(),
+          description: newCategory.description.trim() || undefined,
+        },
+      })
+
+      await reloadCategories()
+      toast.success('Category created successfully')
+      setNewCategory({ name: '', description: '' })
+      setIsAddOpen(false)
+    } catch (error) {
+      const message = error instanceof Error ? error.message.replace('API request failed: ', '') : 'Failed to create category'
+      toast.error(message)
     }
-    
-    setCategories(prev => [...prev, category])
-    toast.success('Category created successfully')
-    setNewCategory({ name: '', description: '' })
-    setIsAddOpen(false)
   }
 
   const handleEditClick = (cat: Category) => {
@@ -86,25 +113,31 @@ export default function CategoriesPage() {
     setIsEditOpen(true)
   }
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!selectedCategory || !editCategory.name.trim()) {
       toast.error('Category name is required')
       return
     }
 
-    setCategories(prev => prev.map(cat =>
-      cat.id === selectedCategory.id
-        ? {
-            ...cat,
-            name: editCategory.name.trim(),
-            description: editCategory.description.trim() || undefined,
-            isActive: editCategory.isActive,
-          }
-        : cat
-    ))
-    toast.success('Category updated successfully')
-    setIsEditOpen(false)
-    setSelectedCategory(null)
+    try {
+      await apiFetch('/api/categories/update.php', {
+        method: 'POST',
+        body: {
+          id: selectedCategory.id,
+          name: editCategory.name.trim(),
+          description: editCategory.description.trim() || undefined,
+          isActive: editCategory.isActive,
+        },
+      })
+
+      await reloadCategories()
+      toast.success('Category updated successfully')
+      setIsEditOpen(false)
+      setSelectedCategory(null)
+    } catch (error) {
+      const message = error instanceof Error ? error.message.replace('API request failed: ', '') : 'Failed to update category'
+      toast.error(message)
+    }
   }
 
   const handleDeleteClick = (cat: Category) => {
@@ -112,7 +145,7 @@ export default function CategoriesPage() {
     setIsDeleteOpen(true)
   }
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!selectedCategory) return
     
     const productCount = products.filter(p => p.categoryId === selectedCategory.id).length
@@ -123,10 +156,20 @@ export default function CategoriesPage() {
       return
     }
     
-    setCategories(prev => prev.filter(cat => cat.id !== selectedCategory.id))
-    toast.success('Category deleted successfully')
-    setIsDeleteOpen(false)
-    setSelectedCategory(null)
+    try {
+      await apiFetch('/api/categories/delete.php', {
+        method: 'POST',
+        body: { id: selectedCategory.id },
+      })
+
+      await reloadCategories()
+      toast.success('Category deleted successfully')
+      setIsDeleteOpen(false)
+      setSelectedCategory(null)
+    } catch (error) {
+      const message = error instanceof Error ? error.message.replace('API request failed: ', '') : 'Failed to delete category'
+      toast.error(message)
+    }
   }
 
   return (

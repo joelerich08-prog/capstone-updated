@@ -1,12 +1,13 @@
 'use client'
 
+import dynamic from 'next/dynamic'
 import { useMemo } from 'react'
 import { DashboardShell } from '@/components/layout/dashboard-shell'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { formatCurrency } from '@/lib/utils/currency'
-import { mockProducts } from '@/lib/mock-data/products'
+import { useProducts } from '@/contexts/products-context'
 import { useTransactions } from '@/contexts/transaction-context'
 import { useInventory } from '@/contexts/inventory-context'
 import { format, subDays, startOfDay, endOfDay } from 'date-fns'
@@ -19,26 +20,25 @@ import {
   ShoppingCart,
   ArrowRight
 } from 'lucide-react'
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Line,
-  ComposedChart,
-  Bar,
-} from 'recharts'
+const AreaChart: any = dynamic(() => import('recharts').then(mod => mod.AreaChart as any), { ssr: false })
+const Area: any = dynamic(() => import('recharts').then(mod => mod.Area as any), { ssr: false })
+const XAxis: any = dynamic(() => import('recharts').then(mod => mod.XAxis as any), { ssr: false })
+const YAxis: any = dynamic(() => import('recharts').then(mod => mod.YAxis as any), { ssr: false })
+const CartesianGrid: any = dynamic(() => import('recharts').then(mod => mod.CartesianGrid as any), { ssr: false })
+const Tooltip: any = dynamic(() => import('recharts').then(mod => mod.Tooltip as any), { ssr: false })
+const ResponsiveContainer: any = dynamic(() => import('recharts').then(mod => mod.ResponsiveContainer as any), { ssr: false })
+const Line: any = dynamic(() => import('recharts').then(mod => mod.Line as any), { ssr: false })
+const ComposedChart: any = dynamic(() => import('recharts').then(mod => mod.ComposedChart as any), { ssr: false })
 
 export default function ForecastPage() {
+  const { products } = useProducts()
   const { transactions } = useTransactions()
   const { inventoryLevels } = useInventory()
   
   // Generate sales forecast from real transaction data
   const forecastData = useMemo(() => {
     const result: { date: string; actual?: number; forecast?: number }[] = []
+    const historicalByWeekday = new Map<number, { total: number; count: number }>()
     
     // Historical data (last 14 days)
     for (let i = 13; i >= 0; i--) {
@@ -50,23 +50,37 @@ export default function ForecastPage() {
         return txnDate >= dayStart && txnDate <= dayEnd
       })
       const total = dayTxns.reduce((sum, t) => sum + t.total, 0)
+      const weekday = date.getDay()
+      const weekdayEntry = historicalByWeekday.get(weekday) ?? { total: 0, count: 0 }
+      weekdayEntry.total += total
+      weekdayEntry.count += 1
+      historicalByWeekday.set(weekday, weekdayEntry)
       result.push({
         date: format(date, 'MMM d'),
         actual: total,
       })
     }
     
-    // Calculate average for forecast (simple moving average)
+    // Calculate average for forecast using the recent baseline and weekday seasonality
     const recentTotals = result.slice(-7).map(d => d.actual || 0)
     const avgDaily = recentTotals.reduce((a, b) => a + b, 0) / 7
+    const overallHistoricalAverage = result.reduce((sum, entry) => sum + (entry.actual || 0), 0) / 14
     
     // Forecast data (next 7 days)
     for (let i = 1; i <= 7; i++) {
       const date = new Date()
       date.setDate(date.getDate() + i)
+      const weekday = date.getDay()
+      const weekdayEntry = historicalByWeekday.get(weekday)
+      const weekdayAverage = weekdayEntry && weekdayEntry.count > 0
+        ? weekdayEntry.total / weekdayEntry.count
+        : overallHistoricalAverage
+      const seasonalityFactor = overallHistoricalAverage > 0
+        ? weekdayAverage / overallHistoricalAverage
+        : 1
       result.push({
         date: format(date, 'MMM d'),
-        forecast: Math.round(avgDaily * (0.9 + Math.random() * 0.2)), // Add slight variance
+        forecast: Math.max(0, Math.round(avgDaily * seasonalityFactor)),
       })
     }
     
@@ -101,7 +115,7 @@ export default function ForecastPage() {
   
   // Calculate stock depletion forecast
   const stockForecast = useMemo(() => {
-    return mockProducts.slice(0, 8).map((product) => {
+    return products.slice(0, 8).map((product) => {
       const inventory = inventoryLevels.find(inv => inv.productId === product.id)
       const totalStock = inventory 
         ? inventory.wholesaleQty * inventory.packsPerBox * inventory.pcsPerPack +
@@ -135,7 +149,7 @@ export default function ForecastPage() {
         status: daysUntilStockout <= 3 ? 'critical' as const : daysUntilStockout <= 7 ? 'warning' as const : 'healthy' as const,
       }
     })
-  }, [transactions, inventoryLevels])
+  }, [transactions, inventoryLevels, products])
   
   const nextWeekProjection = projection.projection
   const projectionChange = projection.changePercent
@@ -232,13 +246,13 @@ export default function ForecastPage() {
                 <YAxis 
                   className="text-xs"
                   tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                  tickFormatter={(value) => `₱${(value / 1000).toFixed(0)}k`}
+                  tickFormatter={(value: any) => `₱${(value / 1000).toFixed(0)}k`}
                 />
                 <Tooltip 
-                  formatter={(value: number, name: string) => [
+                  formatter={((value: any, name: any) => [
                     formatCurrency(value), 
                     name === 'actual' ? 'Actual Sales' : 'Forecast'
-                  ]}
+                  ]) as any}
                   contentStyle={{
                     backgroundColor: 'hsl(var(--background))',
                     border: '1px solid hsl(var(--border))',

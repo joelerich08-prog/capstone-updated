@@ -11,15 +11,15 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { mockCategories } from '@/lib/mock-data/categories'
-import { mockProducts } from '@/lib/mock-data/products'
+import { useProducts } from '@/contexts/products-context'
 import { FolderOpen } from 'lucide-react'
 
 export default function StockmanCategoriesPage() {
+  const { products, categories } = useProducts()
   // Count products per category
-  const categoryProductCounts = mockCategories.map(cat => ({
+  const categoryProductCounts = categories.map(cat => ({
     ...cat,
-    productCount: mockProducts.filter(p => p.categoryId === cat.id).length
+    productCount: products.filter(p => p.categoryId === cat.id).length
   }))
 
   return (
@@ -31,10 +31,10 @@ export default function StockmanCategoriesPage() {
         {/* Categories List */}
         <Card className="md:col-span-2">
           <CardHeader>
-            <CardTitle>Product Categories</CardTitle>
-            <CardDescription>
-              {mockCategories.length} categories
-            </CardDescription>
+              <CardTitle>Product Categories</CardTitle>
+              <CardDescription>
+              {categories.length} categories
+              </CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
@@ -86,17 +86,17 @@ export default function StockmanCategoriesPage() {
             <CardContent className="space-y-4">
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">Total Categories</span>
-                <span className="font-medium">{mockCategories.length}</span>
+                <span className="font-medium">{categories.length}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">Active</span>
                 <span className="font-medium text-green-600 dark:text-green-400">
-                  {mockCategories.filter(c => c.isActive).length}
+                  {categories.filter(c => c.isActive).length}
                 </span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">Total Products</span>
-                <span className="font-medium">{mockProducts.length}</span>
+                <span className="font-medium">{products.length}</span>
               </div>
             </CardContent>
           </Card>

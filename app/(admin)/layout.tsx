@@ -3,8 +3,8 @@
 import { useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/auth-context"
-import { SettingsProvider } from "@/contexts/settings-context"
 import { Spinner } from "@/components/ui/spinner"
+import { AdminRouteProviders } from "@/components/route-providers"
 
 export default function AdminLayout({
   children,
@@ -38,5 +38,5 @@ export default function AdminLayout({
     )
   }
 
-  return <SettingsProvider>{children}</SettingsProvider>
+  return <AdminRouteProviders>{children}</AdminRouteProviders>
 }

@@ -43,7 +43,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useBatches } from '@/contexts/batch-context'
 import { useInventory } from '@/contexts/inventory-context'
 import { useAuth } from '@/contexts/auth-context'
-import { mockProducts } from '@/lib/mock-data/products'
+import { useProducts } from '@/contexts/products-context'
 import { formatCurrency } from '@/lib/utils/currency'
 import { EXPIRY_WARNING_DAYS, EXPIRY_CRITICAL_DAYS } from '@/lib/mock-data/batches'
 import { 
@@ -62,6 +62,7 @@ import { format, differenceInDays } from 'date-fns'
 import { toast } from 'sonner'
 
 export default function ExpiryManagementPage() {
+  const { products } = useProducts()
   const { 
     batches, 
     getExpiringBatches, 
@@ -87,7 +88,7 @@ export default function ExpiryManagementPage() {
 
   // Filter batches
   const filteredBatches = batches.filter(batch => {
-    const product = mockProducts.find(p => p.id === batch.productId)
+    const product = products.find(p => p.id === batch.productId)
     const matchesSearch = 
       product?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       batch.batchNumber.toLowerCase().includes(searchQuery.toLowerCase())
@@ -178,7 +179,7 @@ export default function ExpiryManagementPage() {
   }
 
   const selectedBatch = selectedBatchId ? batches.find(b => b.id === selectedBatchId) : null
-  const selectedProduct = selectedBatch ? mockProducts.find(p => p.id === selectedBatch.productId) : null
+  const selectedProduct = selectedBatch ? products.find(p => p.id === selectedBatch.productId) : null
 
   return (
     <DashboardShell
@@ -274,7 +275,7 @@ export default function ExpiryManagementPage() {
                 </p>
                 <div className="flex flex-wrap gap-2 mt-3">
                   {criticalBatches.slice(0, 5).map(batch => {
-                    const product = mockProducts.find(p => p.id === batch.productId)
+                    const product = products.find(p => p.id === batch.productId)
                     const days = differenceInDays(batch.expirationDate, new Date())
                     return (
                       <Badge key={batch.id} variant="destructive" className="cursor-pointer" onClick={() => {
@@ -355,7 +356,7 @@ export default function ExpiryManagementPage() {
               </TableHeader>
               <TableBody>
                 {filteredBatches.map((batch) => {
-                  const product = mockProducts.find(p => p.id === batch.productId)
+                  const product = products.find(p => p.id === batch.productId)
                   const totalQty = batch.wholesaleQty + batch.retailQty + batch.shelfQty
                   const value = totalQty * batch.costPrice
                   

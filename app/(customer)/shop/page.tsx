@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import type { PurchaseUnitType } from "@/lib/types"
+import type { Product, PurchaseUnitType } from "@/lib/types"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -28,8 +28,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet"
-import { mockProducts } from "@/lib/mock-data/products"
-import { mockCategories } from "@/lib/mock-data/categories"
 import { formatCurrency } from "@/lib/utils/currency"
 import { useCart } from "@/contexts/cart-context"
 import { useInventory } from "@/contexts/inventory-context"
@@ -45,7 +43,7 @@ export default function ShopPage() {
   const [selectedCategory, setSelectedCategory] = useState("all")
   const [sortBy, setSortBy] = useState("name")
   const [viewMode, setViewMode] = useState<ViewMode>("grid")
-  const [selectedProduct, setSelectedProduct] = useState<typeof mockProducts[0] | null>(null)
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [quantity, setQuantity] = useState(1)
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
   const [selectedUnit, setSelectedUnit] = useState<PurchaseUnitType>("pack")
@@ -119,7 +117,7 @@ export default function ShopPage() {
     return items.some(item => item.productId === productId)
   }
 
-  const openProductDialog = (product: typeof mockProducts[0]) => {
+  const openProductDialog = (product: Product) => {
     const inventory = getInventory(product.id)
     const packStock = inventory?.retailQty || 0
     const boxStock = inventory?.wholesaleQty || 0
@@ -332,7 +330,7 @@ export default function ShopPage() {
               const packStock = inventory?.retailQty || 0
               const boxStock = inventory?.wholesaleQty || 0
               const inStock = packStock > 0 || boxStock > 0
-              const category = mockCategories.find(c => c.id === product.categoryId)
+              const category = categories.find(c => c.id === product.categoryId)
               const inCart = isInCart(product.id)
               const packLabel = inventory?.retailUnit || "pack"
 
@@ -419,7 +417,7 @@ export default function ShopPage() {
               const packStock = inventory?.retailQty || 0
               const boxStock = inventory?.wholesaleQty || 0
               const inStock = packStock > 0 || boxStock > 0
-              const category = mockCategories.find(c => c.id === product.categoryId)
+              const category = categories.find(c => c.id === product.categoryId)
               const inCart = isInCart(product.id)
               const packLabel = inventory?.retailUnit || "pack"
 

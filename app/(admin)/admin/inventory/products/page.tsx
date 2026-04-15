@@ -1,7 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '@/contexts/auth-context'
+import { useInventory } from '@/contexts/inventory-context'
+import { useProducts } from '@/contexts/products-context'
 import { DashboardShell } from '@/components/layout/dashboard-shell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -48,8 +50,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import type { Product, ProductVariant } from '@/lib/types'
-import { mockProducts, getProductInventory } from '@/lib/mock-data/products'
-import { mockCategories, getCategoryName } from '@/lib/mock-data/categories'
+import { apiFetch } from '@/lib/api-client'
 import { formatPeso } from '@/lib/utils/currency'
 import { Plus, Search, MoreHorizontal, Edit, Trash2, Eye, X } from 'lucide-react'
 import { toast } from 'sonner'
@@ -58,9 +59,44 @@ import { TablePagination } from '@/components/shared/table-pagination'
 
 export default function ProductsPage() {
   const { user } = useAuth()
+  const { inventoryLevels } = useInventory()
+  const { products: liveProducts, categories, refreshProducts } = useProducts()
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
-  const [products, setProducts] = useState<Product[]>(mockProducts)
+  const [products, setProducts] = useState<Product[]>([])
+  
+  useEffect(() => {
+    if (user?.role !== 'admin') {
+      setProducts(liveProducts)
+      return
+    }
+
+    let isMounted = true
+
+    const loadAdminProducts = async () => {
+      try {
+        const adminProducts = await apiFetch<Product[]>('/api/products/get_admin_all.php')
+        if (!isMounted) return
+
+        setProducts(
+          (adminProducts as Product[]).map(product => ({
+            ...product,
+            createdAt: new Date(product.createdAt),
+          }))
+        )
+      } catch (error) {
+        if (!isMounted) return
+        console.error('Failed to load admin products:', error)
+        setProducts(liveProducts)
+      }
+    }
+
+    loadAdminProducts()
+
+    return () => {
+      isMounted = false
+    }
+  }, [liveProducts, user?.role])
   
   // Dialog states
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
@@ -148,7 +184,24 @@ export default function ProductsPage() {
     setEditVariants(prev => prev.filter(v => v.id !== variantId))
   }
 
-  const handleAddProduct = () => {
+  const reloadProducts = async () => {
+    await refreshProducts()
+
+    if (user?.role === 'admin') {
+      const adminProducts = await apiFetch<Product[]>('/api/products/get_admin_all.php')
+      setProducts(
+        (adminProducts as Product[]).map(product => ({
+          ...product,
+          createdAt: new Date(product.createdAt),
+        }))
+      )
+      return
+    }
+
+    setProducts(liveProducts)
+  }
+
+  const handleAddProduct = async () => {
     if (!newSku.trim() || !newName.trim() || !newCategory) {
       toast.error('SKU, Name, and Category are required')
       return
@@ -158,25 +211,30 @@ export default function ProductsPage() {
       return
     }
 
-    const newProduct: Product = {
-      id: `prod_${Date.now()}`,
-      sku: newSku.trim().toUpperCase(),
-      name: newName.trim(),
-      description: newDescription.trim() || undefined,
-      categoryId: newCategory,
-      variants: newVariants,
-      costPrice: parseFloat(newCostPrice),
-      wholesalePrice: parseFloat(newWholesalePrice),
-      retailPrice: parseFloat(newRetailPrice),
-      images: [],
-      isActive: newIsActive,
-      createdAt: new Date(),
-    }
+    try {
+      await apiFetch('/api/products/create.php', {
+        method: 'POST',
+        body: {
+          sku: newSku.trim().toUpperCase(),
+          name: newName.trim(),
+          description: newDescription.trim() || undefined,
+          categoryId: newCategory,
+          variants: newVariants,
+          costPrice: parseFloat(newCostPrice),
+          wholesalePrice: parseFloat(newWholesalePrice),
+          retailPrice: parseFloat(newRetailPrice),
+          isActive: newIsActive,
+        },
+      })
 
-    setProducts(prev => [newProduct, ...prev])
-    setIsAddOpen(false)
-    resetAddForm()
-    toast.success('Product added successfully')
+      await reloadProducts()
+      setIsAddOpen(false)
+      resetAddForm()
+      toast.success('Product added successfully')
+    } catch (error) {
+      const message = error instanceof Error ? error.message.replace('API request failed: ', '') : 'Failed to add product'
+      toast.error(message)
+    }
   }
 
   const handleViewProduct = (product: Product) => {
@@ -199,27 +257,33 @@ export default function ProductsPage() {
     setIsEditOpen(true)
   }
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!selectedProduct) return
-    
-    setProducts(prev => prev.map(p => 
-      p.id === selectedProduct.id 
-        ? {
-            ...p,
-            name: editName,
-            description: editDescription || undefined,
-            costPrice: parseFloat(editCostPrice) || p.costPrice,
-            wholesalePrice: parseFloat(editWholesalePrice) || p.wholesalePrice,
-            retailPrice: parseFloat(editRetailPrice) || p.retailPrice,
-            categoryId: editCategory,
-            isActive: editIsActive,
-            variants: editVariants,
-          }
-        : p
-    ))
-    setIsEditOpen(false)
-    setSelectedProduct(null)
-    toast.success('Product updated successfully')
+
+    try {
+      await apiFetch('/api/products/update.php', {
+        method: 'POST',
+        body: {
+          id: selectedProduct.id,
+          name: editName.trim(),
+          description: editDescription.trim() || undefined,
+          costPrice: parseFloat(editCostPrice),
+          wholesalePrice: parseFloat(editWholesalePrice),
+          retailPrice: parseFloat(editRetailPrice),
+          categoryId: editCategory,
+          isActive: editIsActive,
+          variants: editVariants,
+        },
+      })
+
+      await reloadProducts()
+      setIsEditOpen(false)
+      setSelectedProduct(null)
+      toast.success('Product updated successfully')
+    } catch (error) {
+      const message = error instanceof Error ? error.message.replace('API request failed: ', '') : 'Failed to update product'
+      toast.error(message)
+    }
   }
 
   const handleDeleteProduct = (product: Product) => {
@@ -227,13 +291,23 @@ export default function ProductsPage() {
     setIsDeleteOpen(true)
   }
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!selectedProduct) return
-    
-    setProducts(prev => prev.filter(p => p.id !== selectedProduct.id))
-    setIsDeleteOpen(false)
-    setSelectedProduct(null)
-    toast.success('Product deleted successfully')
+
+    try {
+      await apiFetch('/api/products/delete.php', {
+        method: 'POST',
+        body: { id: selectedProduct.id },
+      })
+
+      await reloadProducts()
+      setIsDeleteOpen(false)
+      setSelectedProduct(null)
+      toast.success('Product deleted successfully')
+    } catch (error) {
+      const message = error instanceof Error ? error.message.replace('API request failed: ', '') : 'Failed to delete product'
+      toast.error(message)
+    }
   }
 
   const filteredProducts = products.filter(product => {
@@ -270,15 +344,17 @@ export default function ProductsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Categories</SelectItem>
-                {mockCategories.map(cat => (
+                {categories.map(cat => (
                   <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <Button onClick={() => setIsAddOpen(true)}>
-              <Plus className="size-4 mr-2" />
-              Add Product
-            </Button>
+            {isAdmin && (
+              <Button onClick={() => setIsAddOpen(true)}>
+                <Plus className="size-4 mr-2" />
+                Add Product
+              </Button>
+            )}
           </div>
 
           {/* Table */}
@@ -305,7 +381,7 @@ export default function ProductsPage() {
             </TableHeader>
             <TableBody>
               {pagination.paginatedItems.map(product => {
-                const inventory = getProductInventory(product.id)
+                const inventory = inventoryLevels.find(inv => inv.productId === product.id)
 
                 return (
                   <TableRow key={product.id}>
@@ -318,7 +394,7 @@ export default function ProductsPage() {
                         </div>
                       )}
                     </TableCell>
-                    <TableCell>{getCategoryName(product.categoryId)}</TableCell>
+                    <TableCell>{categories.find(cat => cat.id === product.categoryId)?.name || '-'}</TableCell>
                     <TableCell>
                       {product.variants.length > 0 ? (
                         <div className="flex flex-wrap gap-1">
@@ -464,7 +540,7 @@ export default function ProductsPage() {
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
                   <SelectContent>
-                    {mockCategories.map(cat => (
+                    {categories.map(cat => (
                       <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
                     ))}
                   </SelectContent>
@@ -608,7 +684,7 @@ export default function ProductsPage() {
                 </div>
                 <div>
                   <Label className="text-muted-foreground text-xs">Category</Label>
-                  <p>{getCategoryName(selectedProduct.categoryId)}</p>
+                  <p>{categories.find(cat => cat.id === selectedProduct.categoryId)?.name || '-'}</p>
                 </div>
               </div>
               <div>
@@ -727,7 +803,7 @@ export default function ProductsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {mockCategories.map(cat => (
+                  {categories.map(cat => (
                     <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
                   ))}
                 </SelectContent>

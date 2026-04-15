@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { DashboardShell } from '@/components/layout/dashboard-shell'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -23,7 +23,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { mockProducts } from '@/lib/mock-data/products'
+import { useProducts } from '@/contexts/products-context'
+import { useInventory } from '@/contexts/inventory-context'
+import { useBatches } from '@/contexts/batch-context'
 import type { Alert, AlertType, AlertPriority } from '@/lib/types'
 import { 
   AlertTriangle, 
@@ -74,108 +76,119 @@ const priorityConfig: Record<AlertPriority, { label: string; color: string }> = 
   low: { label: 'Low', color: 'bg-slate-500 text-white' },
 }
 
-// Generate mock alerts
-function generateMockAlerts(): Alert[] {
-  const alerts: Alert[] = [
-    {
-      id: 'alert_001',
-      type: 'out_of_stock',
-      priority: 'critical',
-      title: 'Out of Stock: Eden Cheese',
-      message: 'Eden Cheese 165g has run out of stock. Last sold 2 hours ago.',
-      productId: 'prod_001',
-      isRead: false,
-      createdAt: new Date(Date.now() - 1000 * 60 * 30),
-    },
-    {
-      id: 'alert_002',
-      type: 'low_stock',
-      priority: 'high',
-      title: 'Low Stock: Lucky Sardines',
-      message: 'Only 5 units remaining. Reorder point is 20 units.',
-      productId: 'prod_002',
-      isRead: false,
-      createdAt: new Date(Date.now() - 1000 * 60 * 60),
-    },
-    {
-      id: 'alert_003',
-      type: 'low_stock',
-      priority: 'high',
-      title: 'Low Stock: Coca-Cola 1.5L',
-      message: 'Only 8 units remaining. This is a fast-moving item.',
-      productId: 'prod_003',
-      isRead: false,
-      createdAt: new Date(Date.now() - 1000 * 60 * 90),
-    },
-    {
-      id: 'alert_004',
-      type: 'expiring',
-      priority: 'medium',
-      title: 'Expiring: Bear Brand Milk',
-      message: '15 units expiring in 5 days. Consider discount or promotion.',
-      productId: 'prod_004',
-      isRead: true,
-      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 3),
-    },
-    {
-      id: 'alert_005',
-      type: 'low_stock',
-      priority: 'medium',
-      title: 'Low Stock: Piattos Cheese',
-      message: '12 units remaining. Below reorder point of 25.',
-      productId: 'prod_005',
-      isRead: true,
-      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 5),
-    },
-    {
-      id: 'alert_006',
-      type: 'system',
-      priority: 'low',
-      title: 'Daily Backup Complete',
-      message: 'System backup completed successfully at 3:00 AM.',
-      isRead: true,
-      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 8),
-    },
-    {
-      id: 'alert_007',
-      type: 'expiring',
-      priority: 'high',
-      title: 'Expiring: Fresh Eggs',
-      message: '30 units expiring in 2 days. Urgent action required.',
-      productId: 'prod_006',
-      isRead: false,
-      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 12),
-    },
-    {
-      id: 'alert_008',
-      type: 'low_stock',
-      priority: 'low',
-      title: 'Low Stock: Skyflakes Crackers',
-      message: '18 units remaining. Close to reorder point.',
-      productId: 'prod_007',
-      isRead: true,
-      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24),
-    },
-  ]
-  
+function generateLiveAlerts(
+  products: Array<{ id: string; name: string }>,
+  inventoryLevels: Array<{ productId: string; wholesaleQty: number; retailQty: number; shelfQty: number; reorderLevel: number }>,
+  batches: Array<{ id: string; productId: string; batchNumber: string; expirationDate: Date; wholesaleQty: number; retailQty: number; shelfQty: number }>,
+): Alert[] {
+  const alerts: Alert[] = []
+
+  inventoryLevels.forEach(inv => {
+    const product = products.find(p => p.id === inv.productId)
+    const totalStock = inv.wholesaleQty + inv.retailQty + inv.shelfQty
+
+    if (totalStock === 0) {
+      alerts.push({
+        id: `out-of-stock-${inv.productId}`,
+        type: 'out_of_stock',
+        priority: 'critical',
+        title: `Out of Stock: ${product?.name || 'Product'}`,
+        message: `${product?.name || 'Product'} has no remaining stock.`,
+        productId: inv.productId,
+        isRead: false,
+        createdAt: new Date(),
+      })
+      return
+    }
+
+    if (totalStock <= inv.reorderLevel) {
+      alerts.push({
+        id: `low-stock-${inv.productId}`,
+        type: 'low_stock',
+        priority: totalStock <= Math.max(1, Math.floor(inv.reorderLevel * 0.5)) ? 'high' : 'medium',
+        title: `Low Stock: ${product?.name || 'Product'}`,
+        message: `${product?.name || 'Product'} is running low with ${totalStock} units remaining.`,
+        productId: inv.productId,
+        isRead: false,
+        createdAt: new Date(),
+      })
+    }
+  })
+
+  const now = new Date()
+  batches.forEach(batch => {
+    const product = products.find(p => p.id === batch.productId)
+    const daysUntilExpiry = Math.ceil((batch.expirationDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+    const totalQty = batch.wholesaleQty + batch.retailQty + batch.shelfQty
+
+    if (daysUntilExpiry <= 0) {
+      alerts.push({
+        id: `expired-${batch.id}`,
+        type: 'expired',
+        priority: 'critical',
+        title: `Expired: ${product?.name || 'Product'}`,
+        message: `${product?.name || 'Product'} batch ${batch.batchNumber || batch.id} has expired.`,
+        productId: batch.productId,
+        isRead: false,
+        createdAt: new Date(batch.expirationDate),
+      })
+      return
+    }
+
+    if (daysUntilExpiry <= 7) {
+      alerts.push({
+        id: `critical-expiring-${batch.id}`,
+        type: 'expiring',
+        priority: 'high',
+        title: `Expiring Soon: ${product?.name || 'Product'}`,
+        message: `${product?.name || 'Product'} batch ${batch.batchNumber || batch.id} expires in ${daysUntilExpiry} day${daysUntilExpiry === 1 ? '' : 's'}.`,
+        productId: batch.productId,
+        isRead: false,
+        createdAt: new Date(),
+      })
+      return
+    }
+
+    if (daysUntilExpiry <= 30 && totalQty > 0) {
+      alerts.push({
+        id: `expiring-${batch.id}`,
+        type: 'expiring',
+        priority: 'medium',
+        title: `Expiring Soon: ${product?.name || 'Product'}`,
+        message: `${product?.name || 'Product'} batch ${batch.batchNumber || batch.id} expires in ${daysUntilExpiry} days.`,
+        productId: batch.productId,
+        isRead: false,
+        createdAt: new Date(),
+      })
+    }
+  })
+
   return alerts.sort((a, b) => {
-    // Sort by read status first, then by priority, then by date
     if (a.isRead !== b.isRead) return a.isRead ? 1 : -1
     const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 }
     if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
       return priorityOrder[a.priority] - priorityOrder[b.priority]
     }
     return b.createdAt.getTime() - a.createdAt.getTime()
-  })
+  }).slice(0, 30)
 }
 
 export default function AlertsPage() {
-  const [alerts, setAlerts] = useState<Alert[]>(generateMockAlerts())
+  const { products } = useProducts()
+  const { inventoryLevels } = useInventory()
+  const { batches } = useBatches()
+  const [alerts, setAlerts] = useState<Alert[]>([])
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [priorityFilter, setPriorityFilter] = useState<string>('all')
   const [showRead, setShowRead] = useState(true)
   const [selectedAlerts, setSelectedAlerts] = useState<string[]>([])
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+
+  useEffect(() => {
+    if (products.length > 0) {
+      setAlerts(generateLiveAlerts(products, inventoryLevels, batches))
+    }
+  }, [products, inventoryLevels, batches])
 
   const filteredAlerts = alerts.filter(alert => {
     const matchesType = typeFilter === 'all' || alert.type === typeFilter

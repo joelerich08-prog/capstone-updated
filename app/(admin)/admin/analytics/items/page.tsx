@@ -1,5 +1,6 @@
 'use client'
 
+import dynamic from 'next/dynamic'
 import { useState, useMemo } from 'react'
 import { DashboardShell } from '@/components/layout/dashboard-shell'
 import { Input } from '@/components/ui/input'
@@ -25,6 +26,7 @@ import { Progress } from '@/components/ui/progress'
 import { DatePickerWithRange } from '@/components/shared/date-range-picker'
 import { formatCurrency } from '@/lib/utils/currency'
 import { useTransactions } from '@/contexts/transaction-context'
+import { useProducts } from '@/contexts/products-context'
 import type { Transaction } from '@/lib/types'
 import type { DateRange } from 'react-day-picker'
 import { subDays, format } from 'date-fns'
@@ -38,16 +40,14 @@ import {
   ArrowUpDown,
   Calendar
 } from 'lucide-react'
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
-} from 'recharts'
+const BarChart: any = dynamic(() => import('recharts').then(mod => mod.BarChart as any), { ssr: false })
+const Bar: any = dynamic(() => import('recharts').then(mod => mod.Bar as any), { ssr: false })
+const XAxis: any = dynamic(() => import('recharts').then(mod => mod.XAxis as any), { ssr: false })
+const YAxis: any = dynamic(() => import('recharts').then(mod => mod.YAxis as any), { ssr: false })
+const CartesianGrid: any = dynamic(() => import('recharts').then(mod => mod.CartesianGrid as any), { ssr: false })
+const Tooltip: any = dynamic(() => import('recharts').then(mod => mod.Tooltip as any), { ssr: false })
+const ResponsiveContainer: any = dynamic(() => import('recharts').then(mod => mod.ResponsiveContainer as any), { ssr: false })
+const Cell: any = dynamic(() => import('recharts').then(mod => mod.Cell as any), { ssr: false })
 
 interface ItemAnalytics {
   productId: string
@@ -59,43 +59,60 @@ interface ItemAnalytics {
   trend: number // percentage change
 }
 
-// Generate comprehensive item analytics from filtered transactions
-function generateItemAnalytics(transactions: Transaction[]): ItemAnalytics[] {
-  const itemMap: Record<string, { 
-    name: string; 
-    quantity: number; 
-    revenue: number; 
-    transactions: number 
-  }> = {}
+function buildItemAnalytics(
+  currentTransactions: Transaction[],
+  previousTransactions: Transaction[],
+  productCategories: Map<string, string>,
+): ItemAnalytics[] {
+  const currentMap = new Map<
+    string,
+    { name: string; quantity: number; revenue: number }
+  >()
+  const previousMap = new Map<string, { quantity: number; revenue: number }>()
 
-  transactions.forEach(tx => {
+  currentTransactions.forEach(tx => {
     tx.items.forEach(item => {
-      if (!itemMap[item.productId]) {
-        itemMap[item.productId] = {
-          name: item.productName,
-          quantity: 0,
-          revenue: 0,
-          transactions: 0,
-        }
+      const entry = currentMap.get(item.productId) ?? {
+        name: item.productName,
+        quantity: 0,
+        revenue: 0,
       }
-      itemMap[item.productId].quantity += item.quantity
-      itemMap[item.productId].revenue += item.subtotal
-      itemMap[item.productId].transactions++
+      entry.quantity += item.quantity
+      entry.revenue += item.subtotal
+      currentMap.set(item.productId, entry)
     })
   })
 
-  const categories = ['Canned Goods', 'Beverages', 'Snacks', 'Personal Care', 'Instant Noodles', 'Dairy']
+  previousTransactions.forEach(tx => {
+    tx.items.forEach(item => {
+      const entry = previousMap.get(item.productId) ?? { quantity: 0, revenue: 0 }
+      entry.quantity += item.quantity
+      entry.revenue += item.subtotal
+      previousMap.set(item.productId, entry)
+    })
+  })
 
-  return Object.entries(itemMap)
-    .map(([productId, data]) => ({
-      productId,
-      name: data.name,
-      category: categories[Math.floor(Math.random() * categories.length)],
-      quantitySold: data.quantity,
-      revenue: data.revenue,
-      avgPrice: data.revenue / data.quantity,
-      trend: (Math.random() - 0.3) * 40, // -12% to +28%
-    }))
+  return Array.from(currentMap.entries())
+    .map(([productId, data]) => {
+      const previous = previousMap.get(productId)
+      const category = productCategories.get(productId) ?? 'Unknown'
+      const trend =
+        previous && previous.revenue > 0
+          ? ((data.revenue - previous.revenue) / previous.revenue) * 100
+          : data.revenue > 0
+            ? 100
+            : 0
+
+      return {
+        productId,
+        name: data.name,
+        category,
+        quantitySold: data.quantity,
+        revenue: data.revenue,
+        avgPrice: data.quantity > 0 ? data.revenue / data.quantity : 0,
+        trend,
+      }
+    })
     .sort((a, b) => b.revenue - a.revenue)
 }
 
@@ -106,6 +123,7 @@ const CHART_COLORS = [
 
 export default function ItemsAnalyticsPage() {
   const { transactions } = useTransactions()
+  const { products, categories: catalogCategories } = useProducts()
   const [searchQuery, setSearchQuery] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [sortBy, setSortBy] = useState<'revenue' | 'quantity'>('revenue')
@@ -134,8 +152,30 @@ export default function ItemsAnalyticsPage() {
 
   // Generate item analytics from filtered transactions
   const itemAnalytics = useMemo(() => {
-    return generateItemAnalytics(filteredTransactions)
-  }, [filteredTransactions])
+    const days = period === 'custom' && dateRange?.from && dateRange?.to
+      ? Math.max(1, Math.ceil((dateRange.to.getTime() - dateRange.from.getTime()) / (1000 * 60 * 60 * 24)) + 1)
+      : parseInt(period === 'custom' ? '7' : period)
+
+    const previousRange = {
+      from: subDays(effectiveDateRange.from, days),
+      to: subDays(effectiveDateRange.from, 1),
+    }
+
+    const previousTransactions = transactions.filter(tx => {
+      const txDate = new Date(tx.createdAt)
+      return txDate >= previousRange.from && txDate <= previousRange.to
+    })
+
+    const categoryNameById = new Map(catalogCategories.map(category => [category.id, category.name]))
+    const productCategories = new Map(
+      products.map(product => [
+        product.id,
+        categoryNameById.get(product.categoryId) ?? 'Unknown',
+      ])
+    )
+
+    return buildItemAnalytics(filteredTransactions, previousTransactions, productCategories)
+  }, [filteredTransactions, transactions, effectiveDateRange.from, period, dateRange, products, catalogCategories])
 
   const topItems = itemAnalytics.slice(0, 10)
 
@@ -230,7 +270,7 @@ export default function ItemsAnalyticsPage() {
                   type="number"
                   className="text-xs"
                   tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                  tickFormatter={(value) => `₱${(value / 1000).toFixed(0)}k`}
+                  tickFormatter={(value: any) => `₱${(value / 1000).toFixed(0)}k`}
                 />
                 <YAxis 
                   type="category"
@@ -240,7 +280,7 @@ export default function ItemsAnalyticsPage() {
                   width={110}
                 />
                 <Tooltip 
-                  formatter={(value: number) => [formatCurrency(value), 'Revenue']}
+                  formatter={((value: any) => [formatCurrency(value), 'Revenue']) as any}
                   contentStyle={{
                     backgroundColor: 'hsl(var(--background))',
                     border: '1px solid hsl(var(--border))',
@@ -319,8 +359,8 @@ export default function ItemsAnalyticsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Categories</SelectItem>
-                  {categories.map(cat => (
-                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                  {categories.map(categoryName => (
+                    <SelectItem key={categoryName} value={categoryName}>{categoryName}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

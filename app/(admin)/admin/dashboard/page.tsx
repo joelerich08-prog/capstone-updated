@@ -1,15 +1,11 @@
 'use client'
 
+import dynamic from 'next/dynamic'
 import { DashboardShell } from '@/components/layout/dashboard-shell'
 import { StatCard } from '@/components/shared/stat-card'
-import { SalesChart } from '@/components/analytics/sales-chart'
-import { TopItems } from '@/components/analytics/top-items'
-import { InventoryStatus } from '@/components/analytics/inventory-status'
-import { RecentTransactions } from '@/components/analytics/recent-transactions'
-import { AlertsPanel } from '@/components/analytics/alerts-panel'
-import { ExpiryAlertsPanel } from '@/components/analytics/expiry-alerts-panel'
-import { PendingOrders } from '@/components/analytics/pending-orders'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useTransactions } from '@/contexts/transaction-context'
 import { useOrders } from '@/contexts/order-context'
 import { useBatches } from '@/contexts/batch-context'
@@ -28,6 +24,94 @@ import {
   Trophy,
 } from 'lucide-react'
 import Link from 'next/link'
+
+const SalesChart = dynamic(
+  () => import('@/components/analytics/sales-chart').then(mod => mod.SalesChart),
+  {
+    ssr: false,
+    loading: () => <DashboardWidgetSkeleton title="Sales Trend" description="Daily sales over the past week" heightClassName="h-[300px]" />,
+  }
+)
+
+const TopItems = dynamic(
+  () => import('@/components/analytics/top-items').then(mod => mod.TopItems),
+  {
+    ssr: false,
+    loading: () => <DashboardWidgetSkeleton title="Top Selling Items" description="Best performing products by revenue" />,
+  }
+)
+
+const InventoryStatus = dynamic(
+  () => import('@/components/analytics/inventory-status').then(mod => mod.InventoryStatus),
+  {
+    ssr: false,
+    loading: () => <DashboardWidgetSkeleton title="Three-Tier Inventory" description="Stock levels across warehouse, retail, and shelf" heightClassName="h-[300px]" />,
+  }
+)
+
+const RecentTransactions = dynamic(
+  () => import('@/components/analytics/recent-transactions').then(mod => mod.RecentTransactions),
+  {
+    ssr: false,
+    loading: () => <DashboardWidgetSkeleton title="Recent Transactions" description="Latest sales transactions" />,
+  }
+)
+
+const AlertsPanel = dynamic(
+  () => import('@/components/analytics/alerts-panel').then(mod => mod.AlertsPanel),
+  {
+    ssr: false,
+    loading: () => <DashboardWidgetSkeleton title="Active Alerts" description="Items requiring attention" />,
+  }
+)
+
+const ExpiryAlertsPanel = dynamic(
+  () => import('@/components/analytics/expiry-alerts-panel').then(mod => mod.ExpiryAlertsPanel),
+  {
+    ssr: false,
+    loading: () => <DashboardWidgetSkeleton title="Expiry Tracker" description="Product batch expiration status" />,
+  }
+)
+
+const PendingOrders = dynamic(
+  () => import('@/components/analytics/pending-orders').then(mod => mod.PendingOrders),
+  {
+    ssr: false,
+    loading: () => <DashboardWidgetSkeleton title="Online Orders" description="Recent orders from all channels" />,
+  }
+)
+
+function DashboardWidgetSkeleton({
+  title,
+  description,
+  heightClassName = 'h-[220px]',
+}: {
+  title: string
+  description: string
+  heightClassName?: string
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <Skeleton className="h-5 w-40" />
+        <Skeleton className="h-4 w-64" />
+      </CardHeader>
+      <CardContent>
+        <div className={`space-y-4 ${heightClassName}`}>
+          <div className="space-y-3">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-4/5" />
+            <Skeleton className="h-4 w-3/5" />
+          </div>
+          <p className="sr-only">
+            {title}
+            {description}
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
 
 export default function AdminDashboardPage() {
   const { getTodayTransactions, getYesterdayTransactions, getYesterdayStats, transactions } = useTransactions()
@@ -49,9 +133,15 @@ export default function AdminDashboardPage() {
   const yesterdayStats = getYesterdayStats()
   const yesterdayTx = getYesterdayTransactions()
   const yesterdayComparison = {
-    sales: yesterdayStats.sales || 1, // Avoid division by zero
+    sales: yesterdayStats.sales,
     transactions: yesterdayTx.length,
   }
+
+  const salesTrend = yesterdayComparison.sales > 0
+    ? ((stats.todaySales / yesterdayComparison.sales - 1) * 100)
+    : stats.todaySales > 0
+      ? 100
+      : 0
 
   return (
     <DashboardShell
@@ -93,10 +183,13 @@ export default function AdminDashboardPage() {
           value={formatPeso(stats.todaySales)}
           icon={TrendingUp}
           trend={yesterdayComparison.sales > 0 ? {
-            value: `${stats.todaySales >= yesterdayComparison.sales ? '+' : ''}${((stats.todaySales / yesterdayComparison.sales - 1) * 100).toFixed(1)}%`,
-            positive: stats.todaySales >= yesterdayComparison.sales,
+            value: `${salesTrend >= 0 ? '+' : ''}${salesTrend.toFixed(1)}%`,
+            positive: salesTrend >= 0,
+          } : stats.todaySales > 0 ? {
+            value: '+100.0%',
+            positive: true,
           } : undefined}
-          description={dashboardLoading ? 'Updating...' : yesterdayComparison.sales > 0 ? "vs yesterday" : "No data yesterday"}
+          description={dashboardLoading ? 'Updating...' : yesterdayComparison.sales > 0 ? "vs yesterday" : stats.todaySales > 0 ? "First sales recorded vs yesterday" : "No data yesterday"}
         />
         <StatCard
           title="Transactions"

@@ -6,12 +6,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { DatePickerWithRange } from "@/components/shared/date-range-picker"
-import { SalesReport } from "@/components/reports/sales-report"
-import { InventoryReport } from "@/components/reports/inventory-report"
-import { ProfitReport } from "@/components/reports/profit-report"
+import { SalesReportLive } from "@/components/reports/sales-report-live"
+import { InventoryReportLive } from "@/components/reports/inventory-report-live"
+import { ProfitReportLive } from "@/components/reports/profit-report-live"
 import { Download, FileText, Printer } from "lucide-react"
 import { addDays } from "date-fns"
-import { toast } from "sonner"
 import type { DateRange } from "react-day-picker"
 
 export default function ReportsPage() {
@@ -19,29 +18,30 @@ export default function ReportsPage() {
     from: addDays(new Date(), -30),
     to: new Date(),
   })
+  const [activeTab, setActiveTab] = useState("sales")
 
   return (
-    <DashboardShell title="Reports" description="Generate and view business reports">
+    <DashboardShell title="Reports" description="Generate and view business reports" allowedRoles={["admin"]}>
       <div className="flex flex-col gap-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <DatePickerWithRange date={dateRange} setDate={setDateRange} />
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => toast.info("Print functionality coming soon")}>
+            <Button variant="outline" size="sm" onClick={() => window.print()}>
               <Printer className="mr-2 h-4 w-4" />
               Print
             </Button>
-            <Button variant="outline" size="sm" onClick={() => toast.info("PDF export coming soon")}>
+            <Button variant="outline" size="sm" disabled>
               <Download className="mr-2 h-4 w-4" />
               Export PDF
             </Button>
-            <Button variant="outline" size="sm" onClick={() => toast.info("CSV export coming soon")}>
+            <Button variant="outline" size="sm" disabled>
               <FileText className="mr-2 h-4 w-4" />
               Export CSV
             </Button>
           </div>
         </div>
 
-        <Tabs defaultValue="sales" className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-3 lg:w-[400px]">
             <TabsTrigger value="sales">Sales</TabsTrigger>
             <TabsTrigger value="inventory">Inventory</TabsTrigger>
@@ -57,7 +57,7 @@ export default function ReportsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <SalesReport dateRange={dateRange} />
+                <SalesReportLive dateRange={dateRange} />
               </CardContent>
             </Card>
           </TabsContent>
@@ -71,7 +71,7 @@ export default function ReportsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <InventoryReport dateRange={dateRange} />
+                <InventoryReportLive dateRange={dateRange} />
               </CardContent>
             </Card>
           </TabsContent>
@@ -85,7 +85,7 @@ export default function ReportsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <ProfitReport dateRange={dateRange} />
+                <ProfitReportLive dateRange={dateRange} />
               </CardContent>
             </Card>
           </TabsContent>

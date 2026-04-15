@@ -1,5 +1,6 @@
 'use client'
 
+import dynamic from 'next/dynamic'
 import { useState } from 'react'
 import { DashboardShell } from '@/components/layout/dashboard-shell'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -28,24 +29,22 @@ import {
   Calendar,
   Download
 } from 'lucide-react'
-import {
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
-} from 'recharts'
 import { format, subDays, startOfDay, endOfDay } from 'date-fns'
 
 const COLORS = ['#22c55e', '#3b82f6', '#8b5cf6']
+
+const ResponsiveContainer: any = dynamic(() => import('recharts').then(mod => mod.ResponsiveContainer as any), { ssr: false })
+const LineChart: any = dynamic(() => import('recharts').then(mod => mod.LineChart as any), { ssr: false })
+const Line: any = dynamic(() => import('recharts').then(mod => mod.Line as any), { ssr: false })
+const BarChart: any = dynamic(() => import('recharts').then(mod => mod.BarChart as any), { ssr: false })
+const Bar: any = dynamic(() => import('recharts').then(mod => mod.Bar as any), { ssr: false })
+const XAxis: any = dynamic(() => import('recharts').then(mod => mod.XAxis as any), { ssr: false })
+const YAxis: any = dynamic(() => import('recharts').then(mod => mod.YAxis as any), { ssr: false })
+const CartesianGrid: any = dynamic(() => import('recharts').then(mod => mod.CartesianGrid as any), { ssr: false })
+const Tooltip: any = dynamic(() => import('recharts').then(mod => mod.Tooltip as any), { ssr: false })
+const PieChart: any = dynamic(() => import('recharts').then(mod => mod.PieChart as any), { ssr: false })
+const Pie: any = dynamic(() => import('recharts').then(mod => mod.Pie as any), { ssr: false })
+const Cell: any = dynamic(() => import('recharts').then(mod => mod.Cell as any), { ssr: false })
 
 export default function SalesAnalyticsPage() {
   const { transactions, getTodayTransactions } = useTransactions()
@@ -350,10 +349,10 @@ export default function SalesAnalyticsPage() {
                   <YAxis 
                     className="text-xs"
                     tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                    tickFormatter={(value) => `₱${(value / 1000).toFixed(0)}k`}
+                    tickFormatter={(value: any) => `₱${(value / 1000).toFixed(0)}k`}
                   />
                   <Tooltip 
-                    formatter={(value: number) => [formatCurrency(value), 'Sales']}
+                    formatter={((value: any) => [formatCurrency(value), 'Sales']) as any}
                     contentStyle={{
                       backgroundColor: 'hsl(var(--background))',
                       border: '1px solid hsl(var(--border))',
@@ -391,7 +390,7 @@ export default function SalesAnalyticsPage() {
                     outerRadius={80}
                     dataKey="total"
                     nameKey="type"
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    label={({ name, percent }: { name: any; percent: any }) => `${name} ${(percent * 100).toFixed(0)}%`}
                     labelLine={false}
                   >
                     {paymentData.map((_, index) => (
@@ -399,7 +398,7 @@ export default function SalesAnalyticsPage() {
                     ))}
                   </Pie>
                   <Tooltip 
-                    formatter={(value: number) => formatCurrency(value)}
+                    formatter={((value: any) => formatCurrency(value)) as any}
                     contentStyle={{
                       backgroundColor: 'hsl(var(--background))',
                       border: '1px solid hsl(var(--border))',
@@ -448,7 +447,7 @@ export default function SalesAnalyticsPage() {
                   tick={{ fill: 'hsl(var(--muted-foreground))' }}
                 />
                 <Tooltip 
-                  formatter={(value: number) => [value, 'Transactions']}
+                  formatter={((value: any) => [value, 'Transactions']) as any}
                   contentStyle={{
                     backgroundColor: 'hsl(var(--background))',
                     border: '1px solid hsl(var(--border))',

@@ -2,8 +2,8 @@
 
 import Link from "next/link"
 import { CustomerHeader } from "@/components/layout/customer-header"
-import { InventoryProvider } from "@/contexts/inventory-context"
 import { Store } from "lucide-react"
+import { CustomerRouteProviders } from "@/components/route-providers"
 
 export default function CustomerLayout({
   children,
@@ -11,7 +11,7 @@ export default function CustomerLayout({
   children: React.ReactNode
 }) {
   return (
-    <InventoryProvider>
+    <CustomerRouteProviders>
       <div className="min-h-screen bg-background flex flex-col">
         <CustomerHeader />
         <main className="flex-1">{children}</main>
@@ -44,6 +44,6 @@ export default function CustomerLayout({
         </div>
       </footer>
       </div>
-    </InventoryProvider>
+    </CustomerRouteProviders>
   )
 }

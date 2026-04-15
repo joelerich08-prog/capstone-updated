@@ -33,7 +33,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useOrders } from '@/contexts/order-context'
-import { mockProducts } from '@/lib/mock-data/products'
+import { useProducts } from '@/contexts/products-context'
 import { formatPeso } from '@/lib/utils/currency'
 import { formatDistanceToNow, format } from 'date-fns'
 import {
@@ -79,6 +79,7 @@ interface NewOrderItem {
 
 export default function CashierOrdersPage() {
   const { orders, addOrder: addOrderToContext, updateOrderStatus: updateOrderStatusContext } = useOrders()
+  const { products } = useProducts()
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [activeTab, setActiveTab] = useState('all')
   const [isAddOrderOpen, setIsAddOrderOpen] = useState(false)
@@ -125,7 +126,7 @@ export default function CashierOrdersPage() {
   }
 
   const handleAddItem = () => {
-    const product = mockProducts.find(p => p.id === selectedProduct)
+    const product = products.find(p => p.id === selectedProduct)
     if (!product) return
 
     const variant = product.variants.find(v => v.id === selectedVariant)
@@ -187,7 +188,7 @@ export default function CashierOrdersPage() {
     toast.success('Order created successfully')
   }
 
-  const selectedProductData = mockProducts.find(p => p.id === selectedProduct)
+  const selectedProductData = products.find(p => p.id === selectedProduct)
 
   const updateOrderStatus = async (orderId: string, newStatus: OrderStatus) => {
     const result = await updateOrderStatusContext(orderId, newStatus)
@@ -492,7 +493,7 @@ export default function CashierOrdersPage() {
                     <SelectValue placeholder="Select product" />
                   </SelectTrigger>
                   <SelectContent>
-                    {mockProducts.filter(p => p.isActive).map(product => (
+                    {products.filter(p => p.isActive).map(product => (
                       <SelectItem key={product.id} value={product.id}>
                         {product.name} - {formatPeso(product.retailPrice)}
                       </SelectItem>

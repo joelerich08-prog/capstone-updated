@@ -51,7 +51,8 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Label } from "@/components/ui/label"
 import { useUsers, type ExtendedUser } from "@/contexts/users-context"
-import { Plus, Search, MoreHorizontal, Mail, Phone, Shield, Edit, Trash2, UserCheck, UserX } from "lucide-react"
+import { apiFetch } from "@/lib/api-client"
+import { Plus, Search, MoreHorizontal, Mail, Shield, Edit, Trash2, UserCheck, UserX } from "lucide-react"
 import type { UserRole } from "@/lib/types"
 import { format } from "date-fns"
 import { toast } from "sonner"
@@ -67,7 +68,7 @@ const roleColors: Record<UserRole, string> = {
 }
 
 export default function UsersPage() {
-  const { users, isLoading, setUsers } = useUsers()
+  const { users, isLoading, refreshUsers } = useUsers()
   const [searchQuery, setSearchQuery] = useState("")
   const [roleFilter, setRoleFilter] = useState<string>("all")
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
@@ -79,7 +80,6 @@ export default function UsersPage() {
   const [newUserForm, setNewUserForm] = useState({
     name: "",
     email: "",
-    phone: "",
     role: "cashier" as UserRole,
     password: "",
   })
@@ -88,7 +88,6 @@ export default function UsersPage() {
   const [editUserForm, setEditUserForm] = useState({
     name: "",
     email: "",
-    phone: "",
     role: "cashier" as UserRole,
   })
 
@@ -102,18 +101,25 @@ export default function UsersPage() {
 
   const pagination = usePagination(filteredUsers, { itemsPerPage: 10 })
 
-  const handleToggleStatus = (userId: string) => {
-    setUsers(users.map(user => {
-      if (user.id === userId) {
-        const newStatus = user.status === "active" ? "inactive" : "active"
-        toast.success(`User ${newStatus === "active" ? "activated" : "deactivated"}`)
-        return { ...user, status: newStatus }
-      }
-      return user
-    }))
+  const handleToggleStatus = async (user: ExtendedUser) => {
+    try {
+      const nextIsActive = user.status !== "active"
+      await apiFetch("/api/users/set_active.php", {
+        method: "POST",
+        body: {
+          id: user.id,
+          isActive: nextIsActive,
+        },
+      })
+      await refreshUsers()
+      toast.success(`User ${nextIsActive ? "activated" : "deactivated"}`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message.replace("API request failed: ", "") : "Failed to update user status"
+      toast.error(message)
+    }
   }
 
-  const handleCreateUser = (e: React.FormEvent) => {
+  const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault()
     
     // Check for duplicate email
@@ -122,25 +128,28 @@ export default function UsersPage() {
       return
     }
     
-    const newUser: ExtendedUser = {
-      id: `user-${Date.now()}`,
-      name: newUserForm.name,
-      email: newUserForm.email,
-      phone: newUserForm.phone || undefined,
-      role: newUserForm.role,
-      isActive: true,
-      status: "active",
-      createdAt: new Date(),
-      lastLogin: undefined,
+    try {
+      await apiFetch("/api/users/create.php", {
+        method: "POST",
+        body: {
+          name: newUserForm.name.trim(),
+          email: newUserForm.email.trim(),
+          role: newUserForm.role,
+          password: newUserForm.password,
+        },
+      })
+
+      await refreshUsers()
+      setIsAddDialogOpen(false)
+      setNewUserForm({ name: "", email: "", role: "cashier", password: "" })
+      toast.success("User created successfully")
+    } catch (error) {
+      const message = error instanceof Error ? error.message.replace("API request failed: ", "") : "Failed to create user"
+      toast.error(message)
     }
-    
-    setUsers([newUser, ...users])
-    setIsAddDialogOpen(false)
-    setNewUserForm({ name: "", email: "", phone: "", role: "cashier", password: "" })
-    toast.success("User created successfully")
   }
 
-  const handleEditUser = (e: React.FormEvent) => {
+  const handleEditUser = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!editingUser) return
     
@@ -150,22 +159,25 @@ export default function UsersPage() {
       return
     }
     
-    setUsers(users.map(user => {
-      if (user.id === editingUser.id) {
-        return {
-          ...user,
-          name: editUserForm.name,
-          email: editUserForm.email,
-          phone: editUserForm.phone || undefined,
+    try {
+      await apiFetch("/api/users/update.php", {
+        method: "POST",
+        body: {
+          id: editingUser.id,
+          name: editUserForm.name.trim(),
+          email: editUserForm.email.trim(),
           role: editUserForm.role,
-        }
-      }
-      return user
-    }))
-    
-    setIsEditDialogOpen(false)
-    setEditingUser(null)
-    toast.success("User updated successfully")
+        },
+      })
+
+      await refreshUsers()
+      setIsEditDialogOpen(false)
+      setEditingUser(null)
+      toast.success("User updated successfully")
+    } catch (error) {
+      const message = error instanceof Error ? error.message.replace("API request failed: ", "") : "Failed to update user"
+      toast.error(message)
+    }
   }
 
   const openEditDialog = (user: ExtendedUser) => {
@@ -173,17 +185,25 @@ export default function UsersPage() {
     setEditUserForm({
       name: user.name,
       email: user.email,
-      phone: user.phone || "",
       role: user.role,
     })
     setIsEditDialogOpen(true)
   }
 
-  const handleDeleteUser = () => {
+  const handleDeleteUser = async () => {
     if (!deleteUser) return
-    setUsers(users.filter(user => user.id !== deleteUser.id))
-    setDeleteUser(null)
-    toast.success("User deleted successfully")
+    try {
+      await apiFetch("/api/users/delete.php", {
+        method: "POST",
+        body: { id: deleteUser.id },
+      })
+      await refreshUsers()
+      setDeleteUser(null)
+      toast.success("User deleted successfully")
+    } catch (error) {
+      const message = error instanceof Error ? error.message.replace("API request failed: ", "") : "Failed to delete user"
+      toast.error(message)
+    }
   }
   
   const openDeleteDialog = (user: ExtendedUser) => {
@@ -199,7 +219,7 @@ export default function UsersPage() {
   }
 
   return (
-    <DashboardShell title="User Management" description="Manage system users and their permissions">
+    <DashboardShell title="User Management" description="Manage system users and their permissions" allowedRoles={["admin"]}>
       <Card>
         <CardHeader>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -244,16 +264,6 @@ export default function UsersPage() {
                         value={newUserForm.email}
                         onChange={(e) => setNewUserForm({ ...newUserForm, email: e.target.value })}
                         required 
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="phone">Phone</Label>
-                      <Input 
-                        id="phone" 
-                        type="tel" 
-                        placeholder="+63 917 123 4567" 
-                        value={newUserForm.phone}
-                        onChange={(e) => setNewUserForm({ ...newUserForm, phone: e.target.value })}
                       />
                     </div>
                     <div className="grid gap-2">
@@ -362,12 +372,6 @@ export default function UsersPage() {
                           <Mail className="h-3 w-3" />
                           {user.email}
                         </span>
-                        {user.phone && (
-                          <span className="flex items-center gap-1 text-sm text-muted-foreground">
-                            <Phone className="h-3 w-3" />
-                            {user.phone}
-                          </span>
-                        )}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -392,7 +396,7 @@ export default function UsersPage() {
                             <Edit className="mr-2 h-4 w-4" />
                             Edit User
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleToggleStatus(user.id)}>
+                          <DropdownMenuItem onClick={() => handleToggleStatus(user)}>
                             {user.status === "active" ? (
                               <>
                                 <UserX className="mr-2 h-4 w-4" />
@@ -475,16 +479,6 @@ export default function UsersPage() {
                   value={editUserForm.email}
                   onChange={(e) => setEditUserForm({ ...editUserForm, email: e.target.value })}
                   required 
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="edit-phone">Phone</Label>
-                <Input 
-                  id="edit-phone" 
-                  type="tel" 
-                  placeholder="+63 917 123 4567" 
-                  value={editUserForm.phone}
-                  onChange={(e) => setEditUserForm({ ...editUserForm, phone: e.target.value })}
                 />
               </div>
               <div className="grid gap-2">

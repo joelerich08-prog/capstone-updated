@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation"
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 import { StockmanSidebar } from "@/components/layout/stockman-sidebar"
 import { useAuth } from "@/contexts/auth-context"
-import { SettingsProvider } from "@/contexts/settings-context"
 import { Spinner } from "@/components/ui/spinner"
+import { StockmanRouteProviders } from "@/components/route-providers"
 
 export default function StockmanLayout({
   children,
@@ -41,11 +41,11 @@ export default function StockmanLayout({
   }
 
   return (
-    <SettingsProvider>
+    <StockmanRouteProviders>
       <SidebarProvider>
         <StockmanSidebar />
         <SidebarInset>{children}</SidebarInset>
       </SidebarProvider>
-    </SettingsProvider>
+    </StockmanRouteProviders>
   )
 }

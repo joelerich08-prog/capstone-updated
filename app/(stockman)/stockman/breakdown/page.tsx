@@ -24,13 +24,14 @@ import {
 } from '@/components/ui/alert-dialog'
 import { FieldGroup, Field, FieldLabel } from '@/components/ui/field'
 import { Separator } from '@/components/ui/separator'
-import { mockProducts } from '@/lib/mock-data/products'
+import { useProducts } from '@/contexts/products-context'
 import { useInventory } from '@/contexts/inventory-context'
 import { useAuth } from '@/contexts/auth-context'
 import { ArrowDown, Package, Boxes, PackageOpen } from 'lucide-react'
 import { toast } from 'sonner'
 
 export default function BreakdownPage() {
+  const { products } = useProducts()
   const { inventoryLevels, breakdownStock } = useInventory()
   const { user } = useAuth()
   const [selectedProduct, setSelectedProduct] = useState<string>('')
@@ -41,7 +42,7 @@ export default function BreakdownPage() {
     ? inventoryLevels.find(inv => inv.productId === selectedProduct)
     : null
   const product = selectedProduct 
-    ? mockProducts.find(p => p.id === selectedProduct)
+    ? products.find(p => p.id === selectedProduct)
     : null
 
   const handleBreakdownClick = () => {
@@ -99,7 +100,7 @@ export default function BreakdownPage() {
                     <SelectValue placeholder="Choose a product" />
                   </SelectTrigger>
                   <SelectContent>
-                    {mockProducts.map(prod => (
+                    {products.map(prod => (
                       <SelectItem key={prod.id} value={prod.id}>
                         {prod.name} ({prod.sku})
                       </SelectItem>

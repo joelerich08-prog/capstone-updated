@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { DashboardShell } from '@/components/layout/dashboard-shell'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -105,6 +105,11 @@ export default function OrdersPage() {
 
   const pagination = usePagination(filteredOrders, { itemsPerPage: 10 })
 
+  const selectedProductData = useMemo(
+    () => products.find(p => p.id === selectedProduct),
+    [products, selectedProduct]
+  )
+
   const orderCounts = {
     all: orders.length,
     pending: orders.filter(o => o.status === 'pending').length,
@@ -127,21 +132,44 @@ export default function OrdersPage() {
 
   const handleAddItem = () => {
     const product = products.find(p => p.id === selectedProduct)
-    if (!product) return
-
-    const variant = product.variants.find(v => v.id === selectedVariant)
-    const unitPrice = product.retailPrice + (variant?.priceAdjustment || 0)
-
-    const newItem: NewOrderItem = {
-      productId: product.id,
-      productName: product.name,
-      variantId: variant?.id,
-      variantName: variant?.name,
-      quantity: itemQuantity,
-      unitPrice,
+    if (!product) {
+      toast.error('Select a product first')
+      return
+    }
+    if (itemQuantity < 1) {
+      toast.error('Quantity must be at least 1')
+      return
     }
 
-    setOrderItems([...orderItems, newItem])
+    const variant = product.variants.find(v => v.id === selectedVariant)
+    if (product.variants.length > 0 && selectedVariant === '') {
+      toast.error('Select a variant for this product')
+      return
+    }
+
+    const unitPrice = product.retailPrice + (variant?.priceAdjustment || 0)
+    const existingItemIndex = orderItems.findIndex(item =>
+      item.productId === product.id && (item.variantId ?? '') === (variant?.id ?? '')
+    )
+
+    if (existingItemIndex >= 0) {
+      setOrderItems(prev => prev.map((item, index) =>
+        index === existingItemIndex
+          ? { ...item, quantity: item.quantity + itemQuantity }
+          : item
+      ))
+    } else {
+      const newItem: NewOrderItem = {
+        productId: product.id,
+        productName: product.name,
+        variantId: variant?.id,
+        variantName: variant?.name,
+        quantity: itemQuantity,
+        unitPrice,
+      }
+
+      setOrderItems(prev => [...prev, newItem])
+    }
     setSelectedProduct('')
     setSelectedVariant('')
     setItemQuantity(1)
@@ -187,8 +215,6 @@ export default function OrdersPage() {
     resetNewOrderForm()
     toast.success('Order created successfully')
   }
-
-  const selectedProductData = products.find(p => p.id === selectedProduct)
 
   const updateOrderStatus = async (orderId: string, newStatus: OrderStatus) => {
     const result = await updateOrderStatusContext(orderId, newStatus)
@@ -406,14 +432,16 @@ export default function OrdersPage() {
                         Complete
                       </Button>
                     )}
-                    <Button
-                      variant="outline"
-                      className="text-destructive"
-                      onClick={() => updateOrderStatus(selectedOrder.id, 'cancelled')}
-                    >
-                      <XCircle className="size-4 mr-2" />
-                      Cancel
-                    </Button>
+                    {selectedOrder.status !== 'ready' && (
+                      <Button
+                        variant="outline"
+                        className="text-destructive"
+                        onClick={() => updateOrderStatus(selectedOrder.id, 'cancelled')}
+                      >
+                        <XCircle className="size-4 mr-2" />
+                        Cancel
+                      </Button>
+                    )}
                   </div>
                 )}
               </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { DashboardShell } from '@/components/layout/dashboard-shell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -38,6 +38,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { useSuppliers } from '@/contexts/suppliers-context'
 import { useProducts } from '@/contexts/products-context'
+import { apiFetch } from '@/lib/api-client'
 import type { Supplier } from '@/lib/types'
 import { Plus, Search, Phone, Mail, MapPin, Edit, Trash2, Truck } from 'lucide-react'
 import { toast } from 'sonner'
@@ -45,8 +46,9 @@ import { usePagination } from '@/hooks/use-pagination'
 import { TablePagination } from '@/components/shared/table-pagination'
 
 export default function SuppliersPage() {
-  const { suppliers, isLoading, setSuppliers } = useSuppliers()
+  const { suppliers: liveSuppliers, isLoading, refreshSuppliers } = useSuppliers()
   const { products } = useProducts()
+  const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [search, setSearch] = useState('')
   
   // Add dialog state
@@ -71,6 +73,25 @@ export default function SuppliersPage() {
   const [isDeleteOpen, setIsDeleteOpen] = useState(false)
   const [supplierToDelete, setSupplierToDelete] = useState<Supplier | null>(null)
 
+  const loadSuppliers = async () => {
+    try {
+      const adminSuppliers = await apiFetch<Supplier[]>('/api/suppliers/get_admin_all.php')
+      setSuppliers(adminSuppliers)
+    } catch (error) {
+      console.error('Failed to load admin suppliers:', error)
+      setSuppliers(liveSuppliers)
+    }
+  }
+
+  const reloadSuppliers = async () => {
+    await refreshSuppliers()
+    await loadSuppliers()
+  }
+
+  useEffect(() => {
+    void loadSuppliers()
+  }, [liveSuppliers])
+
   const suppliersWithProductCount = suppliers.map(sup => ({
     ...sup,
     productCount: products.filter(p => p.supplierId === sup.id).length
@@ -94,26 +115,32 @@ export default function SuppliersPage() {
     setNewAddress('')
   }
 
-  const handleAddSupplier = () => {
+  const handleAddSupplier = async () => {
     if (!newName.trim()) {
       toast.error('Company name is required')
       return
     }
 
-    const newSupplier: Supplier = {
-      id: `sup_${Date.now()}`,
-      name: newName.trim(),
-      contactPerson: newContactPerson.trim() || undefined,
-      phone: newPhone.trim() || undefined,
-      email: newEmail.trim() || undefined,
-      address: newAddress.trim() || undefined,
-      isActive: true,
-    }
+    try {
+      await apiFetch('/api/suppliers/create.php', {
+        method: 'POST',
+        body: {
+          name: newName.trim(),
+          contactPerson: newContactPerson.trim() || undefined,
+          phone: newPhone.trim() || undefined,
+          email: newEmail.trim() || undefined,
+          address: newAddress.trim() || undefined,
+        },
+      })
 
-    setSuppliers(prev => [...prev, newSupplier])
-    toast.success('Supplier added successfully')
-    resetAddForm()
-    setIsAddOpen(false)
+      await reloadSuppliers()
+      toast.success('Supplier added successfully')
+      resetAddForm()
+      setIsAddOpen(false)
+    } catch (error) {
+      const message = error instanceof Error ? error.message.replace('API request failed: ', '') : 'Failed to add supplier'
+      toast.error(message)
+    }
   }
 
   const handleEditClick = (supplier: Supplier) => {
@@ -127,7 +154,7 @@ export default function SuppliersPage() {
     setIsEditOpen(true)
   }
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!selectedSupplier) return
     
     if (!editName.trim()) {
@@ -135,23 +162,28 @@ export default function SuppliersPage() {
       return
     }
 
-    setSuppliers(prev => prev.map(sup => 
-      sup.id === selectedSupplier.id
-        ? {
-            ...sup,
-            name: editName.trim(),
-            contactPerson: editContactPerson.trim() || undefined,
-            phone: editPhone.trim() || undefined,
-            email: editEmail.trim() || undefined,
-            address: editAddress.trim() || undefined,
-            isActive: editIsActive,
-          }
-        : sup
-    ))
+    try {
+      await apiFetch('/api/suppliers/update.php', {
+        method: 'POST',
+        body: {
+          id: selectedSupplier.id,
+          name: editName.trim(),
+          contactPerson: editContactPerson.trim() || undefined,
+          phone: editPhone.trim() || undefined,
+          email: editEmail.trim() || undefined,
+          address: editAddress.trim() || undefined,
+          isActive: editIsActive,
+        },
+      })
 
-    toast.success('Supplier updated successfully')
-    setIsEditOpen(false)
-    setSelectedSupplier(null)
+      await reloadSuppliers()
+      toast.success('Supplier updated successfully')
+      setIsEditOpen(false)
+      setSelectedSupplier(null)
+    } catch (error) {
+      const message = error instanceof Error ? error.message.replace('API request failed: ', '') : 'Failed to update supplier'
+      toast.error(message)
+    }
   }
 
   const handleDeleteClick = (supplier: Supplier) => {
@@ -159,13 +191,23 @@ export default function SuppliersPage() {
     setIsDeleteOpen(true)
   }
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!supplierToDelete) return
 
-    setSuppliers(prev => prev.filter(sup => sup.id !== supplierToDelete.id))
-    toast.success('Supplier deleted successfully')
-    setIsDeleteOpen(false)
-    setSupplierToDelete(null)
+    try {
+      await apiFetch('/api/suppliers/delete.php', {
+        method: 'POST',
+        body: { id: supplierToDelete.id },
+      })
+
+      await reloadSuppliers()
+      toast.success('Supplier deleted successfully')
+      setIsDeleteOpen(false)
+      setSupplierToDelete(null)
+    } catch (error) {
+      const message = error instanceof Error ? error.message.replace('API request failed: ', '') : 'Failed to delete supplier'
+      toast.error(message)
+    }
   }
 
   return (

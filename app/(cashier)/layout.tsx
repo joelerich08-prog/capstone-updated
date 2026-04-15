@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation"
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 import { CashierSidebar } from "@/components/layout/cashier-sidebar"
 import { useAuth } from "@/contexts/auth-context"
-import { SettingsProvider } from "@/contexts/settings-context"
 import { Spinner } from "@/components/ui/spinner"
+import { CashierRouteProviders } from "@/components/route-providers"
 
 export default function CashierLayout({
   children,
@@ -44,11 +44,11 @@ export default function CashierLayout({
   }
 
   return (
-    <SettingsProvider>
+    <CashierRouteProviders>
       <SidebarProvider>
         <CashierSidebar />
         <SidebarInset>{children}</SidebarInset>
       </SidebarProvider>
-    </SettingsProvider>
+    </CashierRouteProviders>
   )
 }

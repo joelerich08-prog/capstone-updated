@@ -2,17 +2,6 @@ import type { Metadata, Viewport } from 'next'
 import { Analytics } from '@vercel/analytics/next'
 import { ThemeProvider } from '@/components/theme-provider'
 import { AuthProvider } from '@/contexts/auth-context'
-import { CartProvider } from '@/contexts/cart-context'
-import { InventoryProvider } from '@/contexts/inventory-context'
-import { TransactionProvider } from '@/contexts/transaction-context'
-import { OrderProvider } from '@/contexts/order-context'
-import { BatchProvider } from '@/contexts/batch-context'
-import { SuppliersProvider} from '../contexts/suppliers-context'
-import { ProductsProvider } from '@/contexts/products-context'
-import { SettingsProvider } from '@/contexts/settings-context'
-import { UsersProvider } from '@/contexts/users-context'
-import { CategoriesProvider } from '@/contexts/categories-context'
-import { ActivityLogsProvider } from '@/contexts/activity-logs-context'
 import { Toaster } from '@/components/ui/sonner'
 import { ErrorBoundary } from '@/components/error-boundary'
 import './globals.css'
@@ -67,32 +56,10 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <AuthProvider>
-            <SettingsProvider>
-              <ProductsProvider>
-                <SuppliersProvider>
-                  <CategoriesProvider>
-                    <UsersProvider>
-                    <ActivityLogsProvider>
-                    <CartProvider>
-                      <InventoryProvider>
-                        <TransactionProvider>
-                          <OrderProvider>
-                            <BatchProvider>
-                              <ErrorBoundary>
-                                {children}
-                              </ErrorBoundary>
-                              <Toaster />
-                            </BatchProvider>
-                          </OrderProvider>
-                        </TransactionProvider>
-                      </InventoryProvider>
-                    </CartProvider>
-                  </ActivityLogsProvider>
-                </UsersProvider>
-                </CategoriesProvider>
-                </SuppliersProvider>
-              </ProductsProvider>
-            </SettingsProvider>
+            <ErrorBoundary>
+              {children}
+            </ErrorBoundary>
+            <Toaster />
           </AuthProvider>
         </ThemeProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
