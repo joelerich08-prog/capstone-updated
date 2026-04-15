@@ -81,7 +81,7 @@ export function StockTransferPanel() {
   })
 
   const lowShelfProducts = inventoryLevels
-    .filter((inv) => inv.shelfQty <= inv.reorderLevel)
+    .filter((inv) => inv.shelfQty <= inv.reorderLevel && inv.retailQty > 0)
     .map((inv) => ({
       ...inv,
       product: products.find((p) => p.id === inv.productId),
@@ -163,7 +163,7 @@ export function StockTransferPanel() {
                       <Store className="size-7 text-primary" />
                     </div>
                     <p className="font-bold tabular-nums text-primary">{inventory.shelfQty + quantity}</p>
-                    <p className="text-xs text-muted-foreground">Shelf Stock ({inventory.retailUnit}s)</p>
+                    <p className="text-xs text-muted-foreground">Shelf Stock ({inventory.shelfUnit}s)</p>
                     <p className="text-xs text-green-600 dark:text-green-400">+{quantity}</p>
                   </div>
                 </div>

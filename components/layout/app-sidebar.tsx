@@ -82,14 +82,19 @@ export function AppSidebar() {
     return Icon ? <Icon className="size-4" /> : null
   }
 
-  const isActive = (href: string, isSubItem: boolean = false) => {
+  const isActive = (href: string, isSubItem: boolean = false, matchPaths: string[] = []) => {
     if (href === pathname) return true
+    if (matchPaths.includes(pathname)) return true
     // For sub-items, only match exact paths to avoid multiple highlights
     // (e.g., /admin/settings should not highlight when on /admin/settings/printers)
     if (isSubItem) return false
     // Check if current path starts with the nav item href (for nested routes)
     if (pathname.startsWith(href + '/')) return true
     return false
+  }
+
+  const hasActiveChild = (children: typeof navigation[number]['children']) => {
+    return (children ?? []).some((child) => isActive(child.href, true, child.matchPaths))
   }
 
   const getInitials = (name: string) => {
@@ -125,7 +130,7 @@ export function AppSidebar() {
                   return (
                     <Collapsible
                       key={item.href}
-                      defaultOpen={pathname.startsWith(item.href)}
+                      defaultOpen={isActive(item.href) || hasActiveChild(item.children)}
                       className="group/collapsible"
                     >
                       <SidebarMenuItem>
@@ -142,7 +147,7 @@ export function AppSidebar() {
                               <SidebarMenuSubItem key={child.href}>
                                 <SidebarMenuSubButton
                                   asChild
-                                  isActive={isActive(child.href, true)}
+                                  isActive={isActive(child.href, true, child.matchPaths)}
                                 >
                                   <Link href={child.href}>{child.title}</Link>
                                 </SidebarMenuSubButton>

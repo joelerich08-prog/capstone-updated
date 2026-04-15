@@ -71,24 +71,15 @@ const stockmanNavItems = [
         href: "/stockman/expiry",
       },
       {
-        title: "Receive Stock",
+        title: "Operations",
         href: "/stockman/receiving",
-      },
-      {
-        title: "Breakdown",
-        href: "/stockman/breakdown",
-      },
-      {
-        title: "Transfer",
-        href: "/stockman/transfer",
-      },
-      {
-        title: "Adjustments",
-        href: "/stockman/adjustments",
-      },
-      {
-        title: "Movements",
-        href: "/stockman/movements",
+        matchPaths: [
+          "/stockman/receiving",
+          "/stockman/breakdown",
+          "/stockman/transfer",
+          "/stockman/adjustments",
+          "/stockman/movements",
+        ],
       },
     ],
   },
@@ -118,8 +109,9 @@ export function StockmanSidebar() {
   const pathname = usePathname()
   const { user, logout } = useAuth()
 
-  const isActive = (href: string, isSubItem: boolean = false) => {
+  const isActive = (href: string, isSubItem: boolean = false, matchPaths: string[] = []) => {
     if (href === pathname) return true
+    if (matchPaths.includes(pathname)) return true
     if (isSubItem) return false
     if (pathname.startsWith(href + '/')) return true
     return false
@@ -155,7 +147,9 @@ export function StockmanSidebar() {
             <SidebarMenu>
               {stockmanNavItems.map((item) => {
                 if (item.children && item.children.length > 0) {
-                  const isParentActive = item.children.some(child => pathname.startsWith(child.href))
+                  const isParentActive = item.children.some(
+                    child => pathname.startsWith(child.href) || child.matchPaths?.includes(pathname)
+                  )
                   return (
                     <Collapsible
                       key={item.title}
@@ -176,7 +170,7 @@ export function StockmanSidebar() {
                               <SidebarMenuSubItem key={child.href}>
                                 <SidebarMenuSubButton
                                   asChild
-                                  isActive={isActive(child.href, true)}
+                                  isActive={isActive(child.href, true, child.matchPaths)}
                                 >
                                   <Link href={child.href}>{child.title}</Link>
                                 </SidebarMenuSubButton>

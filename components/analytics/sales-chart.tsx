@@ -3,7 +3,7 @@
 import { useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useTransactions } from '@/contexts/transaction-context'
-import { formatPeso } from '@/lib/utils/currency'
+import { formatPeso, formatPesoShort } from '@/lib/utils/currency'
 import { format, subDays, startOfDay, endOfDay } from 'date-fns'
 import {
   Area,
@@ -72,7 +72,7 @@ export function SalesChart({
                 axisLine={false}
                 tickLine={false}
                 tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
-                tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
+                tickFormatter={(value) => formatPesoShort(value)}
               />
               <Tooltip
                 content={({ active, payload }) => {

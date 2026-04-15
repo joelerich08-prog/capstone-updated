@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+import { usePathname, useSearchParams } from 'next/navigation'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -58,12 +60,25 @@ const tierLabels: Record<InventoryTier, string> = {
   shelf: 'Shelf',
 }
 
+const slugifyFilenamePart = (value: string) =>
+  value
+    .trim()
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+
 export function StockMovementHistory() {
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const [movements, setMovements] = useState<StockMovement[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [tierFilter, setTierFilter] = useState<string>('all')
+
+  const productIdFilter = searchParams.get('productId')
+  const variantIdFilter = searchParams.get('variantId')
+  const variantNameFilter = searchParams.get('variantName')
+  const productNameFilter = searchParams.get('productName')
 
   useEffect(() => {
     let isMounted = true
@@ -106,14 +121,16 @@ export function StockMovementHistory() {
       const searchTarget = `${movement.productName} ${movement.variantName ?? ''} ${movement.performedBy}`.toLowerCase()
       const matchesSearch = searchTarget.includes(searchQuery.toLowerCase())
       const matchesType = typeFilter === 'all' || movement.movementType === typeFilter
+      const matchesProduct = !productIdFilter || movement.productId === productIdFilter
+      const matchesVariant = !variantIdFilter || movement.variantId === variantIdFilter
       const matchesTier =
         tierFilter === 'all' ||
         movement.fromTier === tierFilter ||
         movement.toTier === tierFilter
 
-      return matchesSearch && matchesType && matchesTier
+      return matchesSearch && matchesType && matchesTier && matchesProduct && matchesVariant
     })
-  }, [movements, searchQuery, typeFilter, tierFilter])
+  }, [movements, productIdFilter, searchQuery, tierFilter, typeFilter, variantIdFilter])
 
   const pagination = usePagination(filteredMovements, { itemsPerPage: 10 })
 
@@ -134,7 +151,7 @@ export function StockMovementHistory() {
         const reason = movement.reason ? `"${movement.reason.replace(/"/g, '""')}"` : ''
         const productName = `"${movement.productName.replace(/"/g, '""')}"`
 
-        return `${movement.id},${productName},${movementTypeConfig[movement.movementType].label},${fromTier},${toTier},${movement.quantity},${reason},${movement.performedBy},${format(movement.createdAt, 'yyyy-MM-dd HH:mm')}`
+        return `${movement.id},${productName},${getMovementConfig(movement.movementType).label},${fromTier},${toTier},${movement.quantity},${reason},${movement.performedBy},${format(movement.createdAt, 'yyyy-MM-dd HH:mm')}`
       })
       .join('\n')
 
@@ -143,7 +160,21 @@ export function StockMovementHistory() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `stock-movements-${format(new Date(), 'yyyy-MM-dd')}.csv`
+    const filenameParts = ['stock-movements']
+    if (productNameFilter) {
+      const productSlug = slugifyFilenamePart(productNameFilter)
+      if (productSlug) {
+        filenameParts.push(productSlug)
+      }
+    }
+    if (variantNameFilter) {
+      const variantSlug = slugifyFilenamePart(variantNameFilter)
+      if (variantSlug) {
+        filenameParts.push(variantSlug)
+      }
+    }
+    filenameParts.push(format(new Date(), 'yyyy-MM-dd'))
+    link.download = `${filenameParts.join('-')}.csv`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -212,6 +243,19 @@ export function StockMovementHistory() {
           <CardTitle>Movement History</CardTitle>
         </CardHeader>
         <CardContent>
+          {(productIdFilter || variantIdFilter) && (
+            <div className="mb-4 flex items-center justify-between rounded-lg border bg-muted/40 px-4 py-3">
+              <div className="text-sm">
+                Showing movements for <span className="font-medium">{productNameFilter || 'selected product'}</span>
+                {variantIdFilter && (
+                  <span className="text-muted-foreground"> / {variantNameFilter || 'selected variant'}</span>
+                )}
+              </div>
+              <Button asChild variant="ghost" size="sm">
+                <Link href={pathname}>Clear Filter</Link>
+              </Button>
+            </div>
+          )}
           <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-1 flex-wrap gap-4">
               <div className="relative min-w-[200px] max-w-sm flex-1">
@@ -276,7 +320,11 @@ export function StockMovementHistory() {
                   </TableRow>
                 ) : pagination.paginatedItems.length > 0 ? (
                   pagination.paginatedItems.map((movement) => {
-                    const config = movementTypeConfig[movement.movementType]
+                    const config = getMovementConfig(movement.movementType)
+                    const isNegativeAdjustment = movement.movementType === 'adjustment' && movement.quantity < 0
+                    const displayQuantity = movement.movementType === 'adjustment'
+                      ? Math.abs(movement.quantity)
+                      : movement.quantity
                     return (
                       <TableRow key={movement.id}>
                         <TableCell className="text-sm">
@@ -313,8 +361,9 @@ export function StockMovementHistory() {
                             <span className="text-muted-foreground">-</span>
                           )}
                         </TableCell>
-                        <TableCell className="text-right font-medium tabular-nums">
-                          {movement.quantity}
+                        <TableCell className={`text-right font-medium tabular-nums ${isNegativeAdjustment ? 'text-red-600 dark:text-red-400' : movement.movementType === 'adjustment' ? 'text-green-600 dark:text-green-400' : ''}`}>
+                          {movement.movementType === 'adjustment' && movement.quantity > 0 ? '+' : ''}
+                          {displayQuantity}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {movement.performedBy}
@@ -352,3 +401,10 @@ export function StockMovementHistory() {
     </>
   )
 }
+
+const getMovementConfig = (movementType: string) =>
+  movementTypeConfig[movementType as MovementType] ?? {
+    label: movementType,
+    icon: <ClipboardEdit className="size-4" />,
+    color: 'bg-slate-500/10 text-slate-700 dark:text-slate-400 border-slate-500/30',
+  }

@@ -65,7 +65,20 @@ export function InventoryReportLive({ dateRange }: InventoryReportLiveProps) {
     }
   }, [])
 
-  const inventoryByProduct = useMemo(() => new Map(inventoryLevels.map(level => [level.productId, level])), [inventoryLevels])
+  const inventoryByProduct = useMemo(() => {
+    const aggregated = new Map<string, { wholesaleQty: number; retailQty: number; shelfQty: number; reorderLevel: number }>()
+
+    inventoryLevels.forEach((level) => {
+      const current = aggregated.get(level.productId) ?? { wholesaleQty: 0, retailQty: 0, shelfQty: 0, reorderLevel: 0 }
+      current.wholesaleQty += level.wholesaleQty
+      current.retailQty += level.retailQty
+      current.shelfQty += level.shelfQty
+      current.reorderLevel = Math.max(current.reorderLevel, level.reorderLevel)
+      aggregated.set(level.productId, current)
+    })
+
+    return aggregated
+  }, [inventoryLevels])
   const categoryById = useMemo(() => new Map(categories.map(category => [category.id, category.name])), [categories])
 
   const stockStatusData = useMemo(() => {

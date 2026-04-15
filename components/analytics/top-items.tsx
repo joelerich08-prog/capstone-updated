@@ -47,30 +47,36 @@ export function TopItems({ limit = 5 }: TopItemsProps) {
         <CardDescription>Best performing products by revenue</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="space-y-4">
-          {items.map((item, index) => (
-            <div key={item.name} className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2">
-                  <span className="flex size-6 items-center justify-center rounded-full bg-muted text-xs font-medium">
-                    {index + 1}
-                  </span>
-                  <span className="font-medium truncate max-w-[150px]">{item.name}</span>
+        {items.length > 0 ? (
+          <div className="space-y-4">
+            {items.map((item, index) => (
+              <div key={item.name} className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="flex size-6 items-center justify-center rounded-full bg-muted text-xs font-medium">
+                      {index + 1}
+                    </span>
+                    <span className="font-medium truncate max-w-[150px]">{item.name}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="font-medium tabular-nums">{formatPeso(item.revenue)}</span>
+                    <span className="text-muted-foreground ml-2 text-xs">
+                      ({item.quantity} sold)
+                    </span>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <span className="font-medium tabular-nums">{formatPeso(item.revenue)}</span>
-                  <span className="text-muted-foreground ml-2 text-xs">
-                    ({item.quantity} sold)
-                  </span>
-                </div>
+                <Progress
+                  value={(item.revenue / maxRevenue) * 100}
+                  className="h-1.5"
+                />
               </div>
-              <Progress 
-                value={(item.revenue / maxRevenue) * 100} 
-                className="h-1.5"
-              />
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="flex h-[220px] items-center justify-center text-center text-sm text-muted-foreground">
+            No sales have been recorded yet.
+          </div>
+        )}
       </CardContent>
     </Card>
   )

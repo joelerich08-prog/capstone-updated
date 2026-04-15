@@ -33,7 +33,7 @@ export function ProductCard({ product, viewMode, onQuickView }: ProductCardProps
   const { categories } = useProducts()
 
   const variant = product.variants[0]
-  const inventory = getInventory(product.id)
+  const inventory = getInventory(product.id, variant?.id)
   const pcsPerPack = inventory?.pcsPerPack || 6
   // Pack price = retail price per piece * pieces per pack
   const packPrice = variant 

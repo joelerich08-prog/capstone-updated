@@ -1,6 +1,6 @@
-﻿'use client'
+'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -31,6 +31,7 @@ import { Plus, Minus, AlertTriangle, Check } from 'lucide-react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import type { InventoryTier } from '@/lib/types'
+import { apiFetch } from '@/lib/api-client'
 
 type AdjustmentType = 'add' | 'subtract'
 type AdjustmentReason = 'damage' | 'expiry' | 'theft' | 'correction' | 'other'
@@ -55,42 +56,6 @@ const reasonLabels: Record<AdjustmentReason, string> = {
   other: 'Other',
 }
 
-const mockAdjustmentHistory: AdjustmentHistory[] = [
-  {
-    id: 'adj_001',
-    date: new Date(Date.now() - 1000 * 60 * 60 * 3),
-    productName: 'Lucky Sardines',
-    tier: 'shelf',
-    type: 'subtract',
-    quantity: 5,
-    reason: 'damage',
-    notes: 'Cans dented during restocking',
-    performedBy: 'Juan Dela Cruz',
-  },
-  {
-    id: 'adj_002',
-    date: new Date(Date.now() - 1000 * 60 * 60 * 24),
-    productName: 'Eden Cheese',
-    tier: 'retail',
-    type: 'subtract',
-    quantity: 10,
-    reason: 'expiry',
-    notes: 'Products past expiration date',
-    performedBy: 'Admin User',
-  },
-  {
-    id: 'adj_003',
-    date: new Date(Date.now() - 1000 * 60 * 60 * 48),
-    productName: 'Coca-Cola',
-    tier: 'shelf',
-    type: 'add',
-    quantity: 12,
-    reason: 'correction',
-    notes: 'Found misplaced items in storage',
-    performedBy: 'Maria Santos',
-  },
-]
-
 export function StockAdjustmentPanel() {
   const { user } = useAuth()
   const { products } = useProducts()
@@ -102,12 +67,60 @@ export function StockAdjustmentPanel() {
   const [quantity, setQuantity] = useState<number>(1)
   const [reason, setReason] = useState<AdjustmentReason>('damage')
   const [notes, setNotes] = useState<string>('')
-  const [adjustmentHistory, setAdjustmentHistory] = useState<AdjustmentHistory[]>(mockAdjustmentHistory)
+  const [adjustmentHistory, setAdjustmentHistory] = useState<AdjustmentHistory[]>([])
   const [isConfirmOpen, setIsConfirmOpen] = useState(false)
 
   const inventory = selectedProduct ? getInventory(selectedProduct) : null
   const product = selectedProduct ? products.find((p) => p.id === selectedProduct) : null
   const currentStock = selectedProduct ? getStock(selectedProduct, tier) : 0
+
+  useEffect(() => {
+    let isMounted = true
+
+    const loadAdjustmentHistory = async () => {
+      try {
+        const movements = await apiFetch<Array<{
+          id: string
+          productName: string
+          movementType: string
+          fromTier?: string | null
+          quantity: number
+          reason?: string | null
+          performedBy?: string | null
+          createdAt: string
+        }>>('/api/inventory/get_movements.php')
+
+        if (!isMounted) {
+          return
+        }
+
+        const history = movements
+          .filter(movement => movement.movementType === 'adjustment' && movement.reason && movement.reason in reasonLabels)
+          .map(movement => ({
+            id: movement.id,
+            date: new Date(movement.createdAt),
+            productName: movement.productName,
+            tier: movement.fromTier || 'shelf',
+            type: (movement.quantity >= 0 ? 'add' : 'subtract') as AdjustmentType,
+            quantity: Math.abs(movement.quantity),
+            reason: movement.reason as AdjustmentReason,
+            performedBy: movement.performedBy || 'Unknown User',
+          }))
+
+        setAdjustmentHistory(history.slice(0, 10))
+      } catch (error) {
+        if (isMounted) {
+          setAdjustmentHistory([])
+        }
+      }
+    }
+
+    void loadAdjustmentHistory()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
 
   const handleSubmitClick = () => {
     if (!selectedProduct || quantity <= 0) {
@@ -152,7 +165,7 @@ export function StockAdjustmentPanel() {
         notes: notes.trim(),
         performedBy: user?.name || 'Unknown User',
       }
-      setAdjustmentHistory((prev) => [newAdjustment, ...prev])
+      setAdjustmentHistory((prev) => [newAdjustment, ...prev].slice(0, 10))
 
       const action = adjustmentType === 'add' ? 'Added' : 'Removed'
       toast.success(
@@ -326,29 +339,35 @@ export function StockAdjustmentPanel() {
             <CardDescription>Latest stock changes</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {adjustmentHistory.map((adj) => (
-                <div key={adj.id} className="rounded-lg border p-4">
-                  <div className="mb-2 flex items-start justify-between">
-                    <span className="text-sm font-medium">{adj.productName}</span>
-                    <Badge variant={adj.type === 'add' ? 'default' : 'destructive'} className="text-xs">
-                      {adj.type === 'add' ? '+' : '-'}{adj.quantity}
-                    </Badge>
+            {adjustmentHistory.length > 0 ? (
+              <div className="space-y-4">
+                {adjustmentHistory.map((adj) => (
+                  <div key={adj.id} className="rounded-lg border p-4">
+                    <div className="mb-2 flex items-start justify-between">
+                      <span className="text-sm font-medium">{adj.productName}</span>
+                      <Badge variant={adj.type === 'add' ? 'default' : 'destructive'} className="text-xs">
+                        {adj.type === 'add' ? '+' : '-'}{adj.quantity}
+                      </Badge>
+                    </div>
+                    <div className="space-y-1 text-sm text-muted-foreground">
+                      <p className="flex items-center gap-1">
+                        <span className="capitalize">{adj.tier}</span>
+                        <span className="mx-1">|</span>
+                        {reasonLabels[adj.reason]}
+                      </p>
+                      {adj.notes && <p className="text-xs italic">&quot;{adj.notes}&quot;</p>}
+                      <p className="text-xs">
+                        {adj.performedBy} | {format(adj.date, 'MMM d, h:mm a')}
+                      </p>
+                    </div>
                   </div>
-                  <div className="space-y-1 text-sm text-muted-foreground">
-                    <p className="flex items-center gap-1">
-                      <span className="capitalize">{adj.tier}</span>
-                      <span className="mx-1">|</span>
-                      {reasonLabels[adj.reason]}
-                    </p>
-                    {adj.notes && <p className="text-xs italic">&quot;{adj.notes}&quot;</p>}
-                    <p className="text-xs">
-                      {adj.performedBy} | {format(adj.date, 'MMM d, h:mm a')}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-8 text-center text-sm text-muted-foreground">
+                No recent stock adjustments found.
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

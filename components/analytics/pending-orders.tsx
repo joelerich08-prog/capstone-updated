@@ -11,7 +11,9 @@ import Link from 'next/link'
 
 export function PendingOrders() {
   const { orders: allOrders } = useOrders()
-  const orders = allOrders.slice(0, 5)
+  const orders = allOrders
+    .filter(order => order.status !== 'completed' && order.status !== 'cancelled')
+    .slice(0, 5)
 
   const getSourceIcon = (source: string) => {
     switch (source) {
@@ -48,38 +50,44 @@ export function PendingOrders() {
         <CardDescription>Recent orders from all channels</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="space-y-4">
-          {orders.map((order) => {
-            const SourceIcon = getSourceIcon(order.source)
-            return (
-              <div
-                key={order.id}
-                className="flex items-center justify-between border-b pb-3 last:border-0 last:pb-0"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex size-8 items-center justify-center rounded-full bg-muted">
-                    <SourceIcon className="size-4" />
-                  </div>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium">{order.orderNo}</p>
-                      {getStatusBadge(order.status)}
+        {orders.length > 0 ? (
+          <div className="space-y-4">
+            {orders.map((order) => {
+              const SourceIcon = getSourceIcon(order.source)
+              return (
+                <div
+                  key={order.id}
+                  className="flex items-center justify-between border-b pb-3 last:border-0 last:pb-0"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex size-8 items-center justify-center rounded-full bg-muted">
+                      <SourceIcon className="size-4" />
                     </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium">{order.orderNo}</p>
+                        {getStatusBadge(order.status)}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {order.customerName} - {order.items.length} item{order.items.length !== 1 ? 's' : ''}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-medium tabular-nums">{formatPeso(order.total)}</p>
                     <p className="text-xs text-muted-foreground">
-                      {order.customerName} - {order.items.length} item{order.items.length !== 1 ? 's' : ''}
+                      {formatDistanceToNow(order.createdAt, { addSuffix: true })}
                     </p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-medium tabular-nums">{formatPeso(order.total)}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {formatDistanceToNow(order.createdAt, { addSuffix: true })}
-                  </p>
-                </div>
-              </div>
-            )
-          })}
-        </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="flex h-[220px] items-center justify-center text-center text-sm text-muted-foreground">
+            No active online orders right now.
+          </div>
+        )}
         <Button variant="ghost" size="sm" className="w-full mt-4" asChild>
           <Link href="/admin/orders">
             View all orders

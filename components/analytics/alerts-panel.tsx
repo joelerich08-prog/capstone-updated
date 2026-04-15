@@ -14,7 +14,7 @@ import type { Alert, AlertPriority, AlertType } from '@/lib/types'
 
 export function AlertsPanel() {
   const { inventoryLevels } = useInventory()
-  const { batches, getExpiringBatches, getExpiredBatches } = useBatches()
+  const { getExpiringBatches, getExpiredBatches } = useBatches()
   const { products } = useProducts()
 
   const alerts = useMemo(() => {
@@ -83,7 +83,7 @@ export function AlertsPanel() {
     })
 
     return alertList.slice(0, 5) // Show only top 5 alerts
-  }, [inventoryLevels, batches, products, getExpiringBatches, getExpiredBatches])
+  }, [inventoryLevels, products, getExpiringBatches, getExpiredBatches])
 
   const getAlertIcon = (type: AlertType) => {
     switch (type) {
@@ -125,26 +125,32 @@ export function AlertsPanel() {
         </Badge>
       </CardHeader>
       <CardContent>
-        <div className="space-y-3">
-          {alerts.slice(0, 4).map((alert) => {
-            const Icon = getAlertIcon(alert.type)
-            return (
-              <div
-                key={alert.id}
-                className={`flex items-start gap-3 rounded-lg border p-3 ${getPriorityColor(alert.priority)}`}
-              >
-                <Icon className="size-4 mt-0.5 shrink-0" />
-                <div className="flex-1 space-y-1">
-                  <p className="text-sm font-medium">{alert.title}</p>
-                  <p className="text-xs opacity-80">{alert.message}</p>
-                  <p className="text-xs opacity-60">
-                    {formatDistanceToNow(alert.createdAt, { addSuffix: true })}
-                  </p>
+        {alerts.length > 0 ? (
+          <div className="space-y-3">
+            {alerts.slice(0, 4).map((alert) => {
+              const Icon = getAlertIcon(alert.type)
+              return (
+                <div
+                  key={alert.id}
+                  className={`flex items-start gap-3 rounded-lg border p-3 ${getPriorityColor(alert.priority)}`}
+                >
+                  <Icon className="size-4 mt-0.5 shrink-0" />
+                  <div className="flex-1 space-y-1">
+                    <p className="text-sm font-medium">{alert.title}</p>
+                    <p className="text-xs opacity-80">{alert.message}</p>
+                    <p className="text-xs opacity-60">
+                      {formatDistanceToNow(alert.createdAt, { addSuffix: true })}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            )
-          })}
-        </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="flex h-[188px] items-center justify-center text-center text-sm text-muted-foreground">
+            No active alerts at the moment.
+          </div>
+        )}
         <Button variant="ghost" size="sm" className="w-full mt-4" asChild>
           <Link href="/admin/analytics/alerts">
             View all alerts

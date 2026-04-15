@@ -69,7 +69,7 @@ export function POSTerminal() {
 
   const handleVariantSelect = (variant: Product['variants'][0]) => {
     if (!variantProduct) return
-    const inventory = getInventory(variantProduct.id)
+    const inventory = getInventory(variantProduct.id, variant.id)
     if (!inventory) return
 
     // Show unit selection with variant

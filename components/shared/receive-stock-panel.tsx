@@ -24,7 +24,6 @@ import {
 import { FieldGroup, Field, FieldLabel } from '@/components/ui/field'
 import { useProducts } from '@/contexts/products-context'
 import { useInventory } from '@/contexts/inventory-context'
-import { useBatches } from '@/contexts/batch-context'
 import { useAuth } from '@/contexts/auth-context'
 import { formatCurrency } from '@/lib/utils/currency'
 import { generateBatchNumber } from '@/lib/mock-data/batches'
@@ -82,7 +81,6 @@ const initialReceiveHistory: ReceiveHistory[] = [
 export function ReceiveStockPanel() {
   const { products, suppliers } = useProducts()
   const { receiveStock } = useInventory()
-  const { addBatch } = useBatches()
   const { user } = useAuth()
   const [receiveHistory, setReceiveHistory] = useState<ReceiveHistory[]>(initialReceiveHistory)
   const [selectedSupplier, setSelectedSupplier] = useState<string>('')
@@ -92,13 +90,19 @@ export function ReceiveStockPanel() {
   const [unitCost, setUnitCost] = useState<number>(0)
   const [notes, setNotes] = useState<string>('')
   const [items, setItems] = useState<ReceiveItem[]>([])
+  const [invoiceNumber, setInvoiceNumber] = useState<string>(`INV-${Date.now()}`)
   const [batchNumber, setBatchNumber] = useState<string>(generateBatchNumber())
   const [expirationDate, setExpirationDate] = useState<string>(format(addDays(new Date(), 180), 'yyyy-MM-dd'))
   const [manufacturingDate, setManufacturingDate] = useState<string>('')
 
   const handleAddItem = () => {
+    if (!selectedSupplier) {
+      toast.error('Please select a supplier first')
+      return
+    }
+
     if (!selectedProduct || quantity <= 0) {
-      toast.error('Please select a product and quantity')
+      toast.error('Please select a product and enter a valid quantity')
       return
     }
 
@@ -111,11 +115,35 @@ export function ReceiveStockPanel() {
     if (!product) return
 
     const expDate = new Date(expirationDate)
+    const today = new Date()
     const daysUntilExpiry = differenceInDays(expDate, new Date())
 
     if (daysUntilExpiry <= 0) {
       toast.error('Expiration date must be in the future')
       return
+    }
+
+    if (!batchNumber.trim()) {
+      toast.error('Batch number is required')
+      return
+    }
+
+    const parsedUnitCost = unitCost || product.costPrice
+    if (parsedUnitCost < 0) {
+      toast.error('Unit cost cannot be negative')
+      return
+    }
+
+    if (manufacturingDate) {
+      const mfgDate = new Date(manufacturingDate)
+      if (mfgDate > today) {
+        toast.error('Manufacturing date cannot be in the future')
+        return
+      }
+      if (mfgDate >= expDate) {
+        toast.error('Manufacturing date must be before the expiration date')
+        return
+      }
     }
 
     if (daysUntilExpiry <= 30) {
@@ -141,8 +169,8 @@ export function ReceiveStockPanel() {
           productName: product.name,
           quantity,
           tier,
-          unitCost: unitCost || product.costPrice,
-          batchNumber,
+          unitCost: parsedUnitCost,
+          batchNumber: batchNumber.trim(),
           expirationDate: expDate,
           manufacturingDate: manufacturingDate ? new Date(manufacturingDate) : undefined,
         },
@@ -166,6 +194,10 @@ export function ReceiveStockPanel() {
       toast.error('Please select a supplier')
       return
     }
+    if (!invoiceNumber.trim()) {
+      toast.error('Invoice number is required')
+      return
+    }
     if (items.length === 0) {
       toast.error('Please add at least one item')
       return
@@ -173,40 +205,24 @@ export function ReceiveStockPanel() {
 
     const totalCostValue = items.reduce((sum, item) => sum + item.quantity * item.unitCost, 0)
     const supplier = suppliers.find((s) => s.id === selectedSupplier)
+    if (!supplier) {
+      toast.error('Selected supplier is invalid')
+      return
+    }
     const userName = user?.name || 'Unknown User'
-    const invoiceNumber = `INV-${Date.now()}`
-
-    items.forEach((item) => {
-      const inventory = item.tier === 'wholesale'
-        ? { wholesaleQty: item.quantity, retailQty: 0, shelfQty: 0 }
-        : { wholesaleQty: 0, retailQty: item.quantity, shelfQty: 0 }
-
-      void addBatch({
-        productId: item.productId,
-        batchNumber: item.batchNumber,
-        expirationDate: item.expirationDate,
-        manufacturingDate: item.manufacturingDate,
-        receivedDate: new Date(),
-        ...inventory,
-        initialQty: item.quantity,
-        costPrice: item.unitCost,
-        supplierId: selectedSupplier,
-        invoiceNumber,
-        notes: notes || undefined,
-      })
-    })
 
     const receiveItems = items.map((item) => ({
       productId: item.productId,
-      variantId: item.productId,
-      variantName: item.tier === 'wholesale' ? 'Box' : 'Pack',
       productName: item.productName,
       quantity: item.quantity,
       cost: item.unitCost,
       tier: item.tier,
+      batchNumber: item.batchNumber,
+      expirationDate: format(item.expirationDate, 'yyyy-MM-dd'),
+      manufacturingDate: item.manufacturingDate ? format(item.manufacturingDate, 'yyyy-MM-dd') : undefined,
     }))
 
-    const result = await receiveStock(receiveItems, supplier?.name || 'Unknown Supplier', invoiceNumber, userName)
+    const result = await receiveStock(receiveItems, supplier.id, supplier.name, invoiceNumber.trim(), userName)
 
     if (result.success) {
       const newReceipt: ReceiveHistory = {
@@ -223,6 +239,9 @@ export function ReceiveStockPanel() {
       setItems([])
       setSelectedSupplier('')
       setNotes('')
+      setInvoiceNumber(`INV-${Date.now()}`)
+      setBatchNumber(generateBatchNumber())
+      setManufacturingDate('')
       setExpirationDate(format(addDays(new Date(), 180), 'yyyy-MM-dd'))
     } else {
       toast.error(result.error || 'Failed to receive stock')
@@ -242,9 +261,9 @@ export function ReceiveStockPanel() {
         <CardContent className="space-y-6">
           <FieldGroup>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field>
-                <FieldLabel>Supplier</FieldLabel>
-                <Select value={selectedSupplier} onValueChange={setSelectedSupplier}>
+                  <Field>
+                    <FieldLabel>Supplier</FieldLabel>
+                    <Select value={selectedSupplier} onValueChange={setSelectedSupplier}>
                   <SelectTrigger><SelectValue placeholder="Select supplier" /></SelectTrigger>
                   <SelectContent>
                     {suppliers.map((supplier) => (
@@ -253,10 +272,10 @@ export function ReceiveStockPanel() {
                   </SelectContent>
                 </Select>
               </Field>
-              <Field>
-                <FieldLabel>Invoice Number</FieldLabel>
-                <Input value={`INV-${Date.now()}`} readOnly placeholder="INV-2024-001" />
-              </Field>
+                  <Field>
+                    <FieldLabel>Invoice Number</FieldLabel>
+                    <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder="INV-2024-001" />
+                  </Field>
             </div>
 
             <div className="border-t pt-4 mt-4">
