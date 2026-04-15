@@ -57,6 +57,21 @@ try {
         exit;
     }
 
+    $allowedTransitions = [
+        'pending' => ['preparing', 'cancelled'],
+        'preparing' => ['ready', 'cancelled'],
+        'ready' => ['completed', 'cancelled'],
+        'completed' => [],
+        'cancelled' => [],
+    ];
+
+    if (!in_array($status, $allowedTransitions[$previousStatus] ?? [], true)) {
+        $pdo->rollBack();
+        http_response_code(400);
+        echo json_encode(['error' => "Cannot change order status from {$previousStatus} to {$status}"]);
+        exit;
+    }
+
     $sourceTierMap = [
         'facebook' => 'shelf',
         'sms' => 'retail',
@@ -67,6 +82,7 @@ try {
     $inventoryTier = $sourceTierMap[$orderSource] ?? 'shelf';
     $shouldAdjustStock = in_array($status, ['ready', 'completed'], true);
     $alreadyDeducted = in_array($previousStatus, ['ready', 'completed'], true);
+    $shouldRestoreStock = $status === 'cancelled' && $alreadyDeducted;
 
     if ($shouldAdjustStock && !$alreadyDeducted) {
         $stmt = $pdo->prepare('SELECT id, productId, variantId, quantity FROM order_items WHERE orderId = ?');
@@ -122,6 +138,23 @@ try {
                 $message = "Ordered item {$item['productId']} is low on {$inventoryTier} stock: {$updatedInventory["{$inventoryTier}Qty"]} remaining";
                 $stmt->execute([$alertId, $message, $item['productId']]);
             }
+        }
+    }
+
+    if ($shouldRestoreStock) {
+        $stmt = $pdo->prepare('SELECT id, productId, variantId, quantity FROM order_items WHERE orderId = ?');
+        $stmt->execute([$orderId]);
+        $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($items as $item) {
+            $variantCondition = $item['variantId'] ? 'variantId = :variantId' : 'variantId IS NULL';
+            $params = [':productId' => $item['productId']];
+            if ($item['variantId']) {
+                $params[':variantId'] = $item['variantId'];
+            }
+
+            $stmt = $pdo->prepare("UPDATE inventory_levels SET {$inventoryTier}Qty = {$inventoryTier}Qty + :quantity WHERE productId = :productId AND $variantCondition");
+            $stmt->execute(array_merge($params, [':quantity' => $item['quantity']]));
         }
     }
 

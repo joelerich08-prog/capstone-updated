@@ -15,31 +15,24 @@ try {
     $stmt = $pdo->prepare("
         SELECT
             id,
-            email,
             name,
-            role,
-            avatar,
-            NULL as phone,
-            isActive,
-            CASE WHEN isActive = 1 THEN 'active' ELSE 'inactive' END as status,
-            createdAt,
-            lastLogin
-        FROM users
+            contactPerson,
+            phone,
+            email,
+            address,
+            isActive
+        FROM suppliers
         ORDER BY name ASC
     ");
 
     $stmt->execute();
-    $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $suppliers = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    foreach ($users as &$user) {
-        $user['isActive'] = (bool) $user['isActive'];
-        $user['createdAt'] = date('c', strtotime($user['createdAt']));
-        if ($user['lastLogin']) {
-            $user['lastLogin'] = date('c', strtotime($user['lastLogin']));
-        }
+    foreach ($suppliers as &$supplier) {
+        $supplier['isActive'] = (bool) $supplier['isActive'];
     }
 
-    echo json_encode($users);
+    echo json_encode($suppliers);
 } catch (Exception $e) {
     http_response_code(500);
     echo json_encode(['error' => 'Database error: ' . $e->getMessage()]);

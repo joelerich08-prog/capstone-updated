@@ -5,6 +5,7 @@ header('Access-Control-Allow-Methods: POST');
 header('Access-Control-Allow-Headers: Content-Type');
 
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../includes/inventory.php';
 
 session_start();
 
@@ -57,15 +58,8 @@ try {
     $pdo->beginTransaction();
 
     // Get inventory with row locking
-    $stmt = $pdo->prepare("SELECT * FROM inventory_levels WHERE productId = ? AND variantId IS NULL FOR UPDATE");
-    $stmt->execute([$productId]);
-    $inventory = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    if (!$inventory) {
-        http_response_code(404);
-        echo json_encode(['error' => 'Inventory not found for product']);
-        exit;
-    }
+    $inventory = getOrCreateInventoryLevel($pdo, $productId, $variantId, true);
+    $inventoryId = $inventory['id'];
 
     // Get current stock for the tier
     $currentStock = 0;
@@ -89,13 +83,13 @@ try {
 
     // Update inventory based on tier
     if ($tier === 'wholesale') {
-        $stmt = $pdo->prepare("UPDATE inventory_levels SET wholesaleQty = ?, updatedAt = NOW() WHERE productId = ? AND variantId IS NULL");
+        $stmt = $pdo->prepare("UPDATE inventory_levels SET wholesaleQty = ?, updatedAt = NOW() WHERE id = ?");
     } elseif ($tier === 'retail') {
-        $stmt = $pdo->prepare("UPDATE inventory_levels SET retailQty = ?, updatedAt = NOW() WHERE productId = ? AND variantId IS NULL");
+        $stmt = $pdo->prepare("UPDATE inventory_levels SET retailQty = ?, updatedAt = NOW() WHERE id = ?");
     } else {
-        $stmt = $pdo->prepare("UPDATE inventory_levels SET shelfQty = ?, updatedAt = NOW() WHERE productId = ? AND variantId IS NULL");
+        $stmt = $pdo->prepare("UPDATE inventory_levels SET shelfQty = ?, updatedAt = NOW() WHERE id = ?");
     }
-    $stmt->execute([$newQty, $productId]);
+    $stmt->execute([$newQty, $inventoryId]);
 
     // Record stock movement
     $stmt = $pdo->prepare("

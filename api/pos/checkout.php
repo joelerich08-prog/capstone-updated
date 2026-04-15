@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../middleware/cors.php';
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../includes/inventory.php';
 
 session_start();
 
@@ -121,60 +122,26 @@ try {
             'subtotal' => $itemSubtotal,
         ];
 
-            $quantityColumn = $tierColumns[$tier];
-            $inventoryVariantId = $variantId;
+        $quantityColumn = $tierColumns[$tier];
+        $inventory = getOrCreateInventoryLevel($pdo, $productId, $variantId, true);
+        $inventoryId = $inventory['id'];
 
-            $stmt = $pdo->prepare("SELECT {$quantityColumn} AS quantity, reorderLevel FROM inventory_levels WHERE productId = :productId AND variantId = :variantId FOR UPDATE");
-            $stmt->execute([':productId' => $productId, ':variantId' => $inventoryVariantId]);
-            $inventory = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            if (!$inventory && $inventoryVariantId !== null) {
-                $inventoryVariantId = null;
-                $stmt = $pdo->prepare("SELECT {$quantityColumn} AS quantity, reorderLevel FROM inventory_levels WHERE productId = :productId AND variantId IS NULL FOR UPDATE");
-                $stmt->execute([':productId' => $productId]);
-                $inventory = $stmt->fetch(PDO::FETCH_ASSOC);
-            }
-
-            if (!$inventory) {
-                $pdo->rollBack();
-                http_response_code(404);
-                echo json_encode(['error' => 'Inventory record not found for product']);
-                exit;
-            }
-
-        if ($inventory['quantity'] < $quantity) {
+        if ((int) $inventory[$quantityColumn] < $quantity) {
             $pdo->rollBack();
             http_response_code(400);
             echo json_encode(['error' => 'Insufficient stock for product']);
             exit;
-            }
+        }
 
-            if ($inventoryVariantId === null) {
-                $stmt = $pdo->prepare("UPDATE inventory_levels SET {$quantityColumn} = {$quantityColumn} - :quantity WHERE productId = :productId AND variantId IS NULL");
-                $stmt->execute([
-                    ':quantity' => $quantity,
-                    ':productId' => $productId,
-                ]);
-            } else {
-                $stmt = $pdo->prepare("UPDATE inventory_levels SET {$quantityColumn} = {$quantityColumn} - :quantity WHERE productId = :productId AND variantId = :variantId");
-                $stmt->execute([
-                    ':quantity' => $quantity,
-                    ':productId' => $productId,
-                    ':variantId' => $inventoryVariantId,
-                ]);
-            }
+        $stmt = $pdo->prepare("UPDATE inventory_levels SET {$quantityColumn} = {$quantityColumn} - :quantity WHERE id = :id");
+        $stmt->execute([
+            ':quantity' => $quantity,
+            ':id' => $inventoryId,
+        ]);
 
-            if ($inventoryVariantId === null) {
-                $stmt = $pdo->prepare("SELECT {$quantityColumn} AS quantity, reorderLevel FROM inventory_levels WHERE productId = :productId AND variantId IS NULL");
-                $stmt->execute([':productId' => $productId]);
-            } else {
-                $stmt = $pdo->prepare("SELECT {$quantityColumn} AS quantity, reorderLevel FROM inventory_levels WHERE productId = :productId AND variantId = :variantId");
-                $stmt->execute([
-                    ':productId' => $productId,
-                    ':variantId' => $inventoryVariantId,
-                ]);
-            }
-            $updatedInventory = $stmt->fetch(PDO::FETCH_ASSOC);
+        $stmt = $pdo->prepare("SELECT {$quantityColumn} AS quantity, reorderLevel FROM inventory_levels WHERE id = :id");
+        $stmt->execute([':id' => $inventoryId]);
+        $updatedInventory = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($updatedInventory && $updatedInventory['quantity'] <= $updatedInventory['reorderLevel']) {
             $alertId = bin2hex(random_bytes(16));

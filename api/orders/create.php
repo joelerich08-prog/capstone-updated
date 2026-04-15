@@ -4,6 +4,7 @@ header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST');
 header('Access-Control-Allow-Headers: Content-Type');
 
+require_once __DIR__ . '/../middleware/cors.php';
 require_once __DIR__ . '/../../config/db.php';
 
 session_start();
@@ -25,16 +26,16 @@ if (!$data || !isset($data['items']) || !is_array($data['items']) || empty($data
     exit;
 }
 
-if (!isset($data['customerName']) || !isset($data['customerPhone']) || !isset($data['total']) || !isset($data['orderSource'])) {
+if (!isset($data['customerName']) || !isset($data['customerPhone']) || !isset($data['total']) || (!isset($data['orderSource']) && !isset($data['source']))) {
     http_response_code(400);
-    echo json_encode(['error' => 'Invalid input: customerName, customerPhone, total, and orderSource are required']);
+    echo json_encode(['error' => 'Invalid input: customerName, customerPhone, total, and source are required']);
     exit;
 }
 
 $customerName = trim($data['customerName']);
 $customerPhone = trim($data['customerPhone']);
 $total = (float)$data['total'];
-$orderSource = trim($data['orderSource']);
+$orderSource = trim((string) ($data['orderSource'] ?? $data['source']));
 $notes = isset($data['notes']) ? trim($data['notes']) : null;
 $items = $data['items'];
 
@@ -77,75 +78,65 @@ try {
     $pdo->beginTransaction();
 
     // Create order
-    $orderId = bin2hex(random_bytes(8));
-    $orderNo = 'ORD-' . str_pad((int)date('ymd'), 6, '0', STR_PAD_LEFT) . '-' . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
+    $orderId = bin2hex(random_bytes(16));
+    $orderNo = 'ORD-' . date('ymd') . '-' . str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT);
 
     $stmt = $pdo->prepare("
-        INSERT INTO orders (id, orderNo, userId, customerName, customerPhone, total, status, orderSource, notes, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, NOW(), NOW())
+        INSERT INTO orders (id, orderNo, source, userId, customerName, customerPhone, total, status, notes, createdAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, NOW())
     ");
     $stmt->execute([
         $orderId,
         $orderNo,
+        $orderSource,
         $userId,
         $customerName,
         $customerPhone,
         $total,
-        $orderSource,
         $notes
     ]);
 
     // Create order items
     foreach ($items as $item) {
-        $itemId = bin2hex(random_bytes(8));
+        $itemId = bin2hex(random_bytes(16));
+        $variantId = isset($item['variantId']) && trim((string) $item['variantId']) !== '' ? trim((string) $item['variantId']) : null;
+        $variantName = isset($item['variantName']) && trim((string) $item['variantName']) !== '' ? trim((string) $item['variantName']) : null;
         $itemStmt = $pdo->prepare("
-            INSERT INTO order_items (id, orderId, productId, productName, quantity, unitPrice, discount, total, createdAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+            INSERT INTO order_items (id, orderId, productId, variantId, productName, variantName, quantity, unitPrice)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ");
         $itemStmt->execute([
             $itemId,
             $orderId,
             trim($item['productId']),
-            isset($item['productName']) ? trim($item['productName']) : '',
+            $variantId,
+            isset($item['productName']) ? trim((string) $item['productName']) : '',
+            $variantName,
             (int)$item['quantity'],
             (float)$item['unitPrice'],
-            isset($item['discount']) ? (float)$item['discount'] : 0,
-            (float)$item['total']
         ]);
     }
-
-    // Log activity
-    $stmt = $pdo->prepare("
-        INSERT INTO activity_logs (id, userId, action, module, description, details, createdAt)
-        VALUES (?, ?, ?, ?, ?, ?, NOW())
-    ");
-    $stmt->execute([
-        bin2hex(random_bytes(8)),
-        $userId,
-        'create_order',
-        'orders',
-        'Created order ' . $orderNo,
-        'Customer: ' . $customerName . ' | Source: ' . $orderSource . ' | Total: ' . $total,
-    ]);
 
     $pdo->commit();
 
     echo json_encode([
         'id' => $orderId,
         'orderNo' => $orderNo,
+        'source' => $orderSource,
         'userId' => $userId,
         'customerName' => $customerName,
         'customerPhone' => $customerPhone,
         'items' => $items,
         'total' => $total,
         'status' => 'pending',
-        'orderSource' => $orderSource,
         'notes' => $notes,
-        'createdAt' => date('Y-m-d H:i:s')
+        'createdAt' => date('c')
     ]);
 
 } catch (Exception $e) {
-    $pdo->rollBack();
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     http_response_code(500);
     echo json_encode(['error' => 'Failed to create order: ' . $e->getMessage()]);
 }

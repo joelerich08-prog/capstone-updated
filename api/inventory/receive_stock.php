@@ -5,6 +5,7 @@ header('Access-Control-Allow-Methods: POST');
 header('Access-Control-Allow-Headers: Content-Type');
 
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../includes/inventory.php';
 
 session_start();
 
@@ -78,37 +79,20 @@ try {
             exit;
         }
 
-        // Get or create inventory level
-        $stmt = $pdo->prepare("SELECT id FROM inventory_levels WHERE productId = ? AND variantId IS NULL");
-        $stmt->execute([$productId]);
-        $inventoryExists = $stmt->fetch();
-
-        if (!$inventoryExists) {
-            // Create new inventory level
-            $stmt = $pdo->prepare("
-                INSERT INTO inventory_levels (id, productId, variantId, wholesaleQty, retailQty, shelfQty, 
-                                              pcsPerPack, packsPerBox, reorderLevel, wholesaleUnit, retailUnit, createdAt, updatedAt)
-                VALUES (?, ?, NULL, 0, 0, 0, 1, 1, 10, 'box', 'unit', NOW(), NOW())
-            ");
-            $stmt->execute([bin2hex(random_bytes(8)), $productId]);
-        }
-
-        // Update inventory based on tier (with row locking)
-        $stmt = $pdo->prepare("SELECT * FROM inventory_levels WHERE productId = ? AND variantId IS NULL FOR UPDATE");
-        $stmt->execute([$productId]);
-        $currentInventory = $stmt->fetch(PDO::FETCH_ASSOC);
+        // Get or create inventory level for the matching product / variant
+        $currentInventory = getOrCreateInventoryLevel($pdo, $productId, $variantId, true);
 
         if ($tier === 'wholesale') {
             $newQty = $currentInventory['wholesaleQty'] + $quantity;
-            $stmt = $pdo->prepare("UPDATE inventory_levels SET wholesaleQty = ?, updatedAt = NOW() WHERE productId = ? AND variantId IS NULL");
+            $stmt = $pdo->prepare("UPDATE inventory_levels SET wholesaleQty = ?, updatedAt = NOW() WHERE id = ?");
         } elseif ($tier === 'retail') {
             $newQty = $currentInventory['retailQty'] + $quantity;
-            $stmt = $pdo->prepare("UPDATE inventory_levels SET retailQty = ?, updatedAt = NOW() WHERE productId = ? AND variantId IS NULL");
+            $stmt = $pdo->prepare("UPDATE inventory_levels SET retailQty = ?, updatedAt = NOW() WHERE id = ?");
         } else {
             $newQty = $currentInventory['shelfQty'] + $quantity;
-            $stmt = $pdo->prepare("UPDATE inventory_levels SET shelfQty = ?, updatedAt = NOW() WHERE productId = ? AND variantId IS NULL");
+            $stmt = $pdo->prepare("UPDATE inventory_levels SET shelfQty = ?, updatedAt = NOW() WHERE id = ?");
         }
-        $stmt->execute([$newQty, $productId]);
+        $stmt->execute([$newQty, $currentInventory['id']]);
 
         // Record stock movement
         $stmt = $pdo->prepare("

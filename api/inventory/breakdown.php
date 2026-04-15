@@ -5,6 +5,7 @@ header('Access-Control-Allow-Methods: POST');
 header('Access-Control-Allow-Headers: Content-Type');
 
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../includes/inventory.php';
 
 session_start();
 
@@ -38,21 +39,8 @@ $pdo = Database::getInstance();
 try {
     $pdo->beginTransaction();
 
-    $variantCondition = $variantId ? 'variantId = :variantId' : 'variantId IS NULL';
-    $stmt = $pdo->prepare("SELECT wholesaleQty, packsPerBox FROM inventory_levels WHERE productId = :productId AND $variantCondition FOR UPDATE");
-    $params = [':productId' => $productId];
-    if ($variantId) {
-        $params[':variantId'] = $variantId;
-    }
-    $stmt->execute($params);
-    $inventory = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    if (!$inventory) {
-        $pdo->rollBack();
-        http_response_code(404);
-        echo json_encode(['error' => 'Inventory not found for product']);
-        exit;
-    }
+    $inventory = getOrCreateInventoryLevel($pdo, $productId, $variantId, true);
+    $inventoryId = $inventory['id'];
 
     if ($inventory['wholesaleQty'] < $wholesaleQuantity) {
         $pdo->rollBack();
@@ -64,15 +52,12 @@ try {
     $packsPerBox = $inventory['packsPerBox'];
     $retailQtyToAdd = $wholesaleQuantity * $packsPerBox;
 
-    $stmt = $pdo->prepare("UPDATE inventory_levels SET wholesaleQty = wholesaleQty - :wholesaleQty, retailQty = retailQty + :retailQty WHERE productId = :productId AND $variantCondition");
+    $stmt = $pdo->prepare("UPDATE inventory_levels SET wholesaleQty = wholesaleQty - :wholesaleQty, retailQty = retailQty + :retailQty WHERE id = :id");
     $updateParams = [
         ':wholesaleQty' => $wholesaleQuantity,
         ':retailQty' => $retailQtyToAdd,
-        ':productId' => $productId,
+        ':id' => $inventoryId,
     ];
-    if ($variantId) {
-        $updateParams[':variantId'] = $variantId;
-    }
     $stmt->execute($updateParams);
 
     $movementId = bin2hex(random_bytes(16));

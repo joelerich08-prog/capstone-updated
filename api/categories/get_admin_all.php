@@ -15,31 +15,22 @@ try {
     $stmt = $pdo->prepare("
         SELECT
             id,
-            email,
             name,
-            role,
-            avatar,
-            NULL as phone,
-            isActive,
-            CASE WHEN isActive = 1 THEN 'active' ELSE 'inactive' END as status,
-            createdAt,
-            lastLogin
-        FROM users
+            description,
+            parentId,
+            isActive
+        FROM categories
         ORDER BY name ASC
     ");
 
     $stmt->execute();
-    $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    foreach ($users as &$user) {
-        $user['isActive'] = (bool) $user['isActive'];
-        $user['createdAt'] = date('c', strtotime($user['createdAt']));
-        if ($user['lastLogin']) {
-            $user['lastLogin'] = date('c', strtotime($user['lastLogin']));
-        }
+    foreach ($categories as &$category) {
+        $category['isActive'] = (bool) $category['isActive'];
     }
 
-    echo json_encode($users);
+    echo json_encode($categories);
 } catch (Exception $e) {
     http_response_code(500);
     echo json_encode(['error' => 'Database error: ' . $e->getMessage()]);
