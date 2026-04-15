@@ -17,7 +17,8 @@ type InventorySyncCallback = (
   quantityChange: number,
   reason: string,
   notes: string,
-  userName: string
+  userName: string,
+  variantId?: string
 ) => Promise<{ success: boolean; error?: string }>
 
 interface BatchContextType {
@@ -364,13 +365,13 @@ export function BatchProvider({ children }: { children: ReactNode }) {
       if (syncCallback) {
         const disposeReason = reason || 'Batch disposal'
         if (disposedQuantities.wholesale > 0) {
-          await syncCallback(batch.productId, 'wholesale', -disposedQuantities.wholesale, 'Disposal', disposeReason, userName)
+          await syncCallback(batch.productId, 'wholesale', -disposedQuantities.wholesale, 'Disposal', disposeReason, userName, batch.variantId)
         }
         if (disposedQuantities.retail > 0) {
-          await syncCallback(batch.productId, 'retail', -disposedQuantities.retail, 'Disposal', disposeReason, userName)
+          await syncCallback(batch.productId, 'retail', -disposedQuantities.retail, 'Disposal', disposeReason, userName, batch.variantId)
         }
         if (disposedQuantities.shelf > 0) {
-          await syncCallback(batch.productId, 'shelf', -disposedQuantities.shelf, 'Disposal', disposeReason, userName)
+          await syncCallback(batch.productId, 'shelf', -disposedQuantities.shelf, 'Disposal', disposeReason, userName, batch.variantId)
         }
       }
 

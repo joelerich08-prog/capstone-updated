@@ -58,7 +58,8 @@ interface InventoryContextType {
     sourceTier: InventoryTier,
     destTier: InventoryTier,
     quantity: number,
-    userName: string
+    userName: string,
+    variantId?: string
   ) => Promise<{ success: boolean; error?: string }>
   
   // Breakdown operations
@@ -222,7 +223,8 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     sourceTier: InventoryTier,
     destTier: InventoryTier,
     quantity: number,
-    userName: string
+    userName: string,
+    variantId?: string
   ) => {
     try {
       await apiFetch('/api/inventory/transfer.php', {
@@ -232,6 +234,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
           sourceTier,
           destTier,
           quantity,
+          variantId,
         },
       })
 
@@ -247,7 +250,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       addActivityLog(
         'transfer',
         `Transferred ${quantity} units from ${tierNames[sourceTier]} to ${tierNames[destTier]}`,
-        `Product ID: ${productId}`,
+        `Product ID: ${productId}${variantId ? ` | Variant ID: ${variantId}` : ''}`,
         userName
       )
 
