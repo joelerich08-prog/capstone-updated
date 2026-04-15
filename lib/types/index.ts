@@ -110,6 +110,8 @@ export interface StockMovement {
   id: string
   productId: string
   variantId?: string
+  productName: string
+  variantName?: string
   movementType: MovementType
   fromTier?: InventoryTier
   toTier?: InventoryTier
