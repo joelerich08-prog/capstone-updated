@@ -234,6 +234,7 @@ export interface NavItem {
   href: string
   icon?: string
   badge?: number
+  matchPaths?: string[]
   children?: NavItem[]
 }
 

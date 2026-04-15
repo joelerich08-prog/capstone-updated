@@ -16,11 +16,17 @@ export const roleNavigations: Record<UserRole, NavItem[]> = {
         { title: 'Categories', href: '/admin/inventory/categories' },
         { title: 'Stock Levels', href: '/admin/inventory/stock-levels' },
         { title: 'Expiry', href: '/admin/inventory/expiry' },
-        { title: 'Receive Stock', href: '/admin/inventory/receive' },
-        { title: 'Breakdown', href: '/admin/inventory/breakdown' },
-        { title: 'Transfer', href: '/admin/inventory/transfer' },
-        { title: 'Adjustments', href: '/admin/inventory/adjustments' },
-        { title: 'Movements', href: '/admin/inventory/movements' },
+        {
+          title: 'Operations',
+          href: '/admin/inventory/receive',
+          matchPaths: [
+            '/admin/inventory/receive',
+            '/admin/inventory/breakdown',
+            '/admin/inventory/transfer',
+            '/admin/inventory/adjustments',
+            '/admin/inventory/movements',
+          ],
+        },
         { title: 'Suppliers', href: '/admin/inventory/suppliers' },
       ],
     },
@@ -68,15 +74,24 @@ export const roleNavigations: Record<UserRole, NavItem[]> = {
     { title: 'Dashboard', href: '/stockman/dashboard', icon: 'LayoutDashboard' },
     {
       title: 'Inventory',
-      href: '/stockman/inventory',
+      href: '/stockman/stock-levels',
       icon: 'Package',
       children: [
-        { title: 'Stock Levels', href: '/stockman/inventory/stock-levels' },
-        { title: 'Receive Stock', href: '/stockman/inventory/receive' },
-        { title: 'Breakdown', href: '/stockman/inventory/breakdown' },
-        { title: 'Transfer', href: '/stockman/inventory/transfer' },
-        { title: 'Adjustments', href: '/stockman/inventory/adjustments' },
-        { title: 'Movements', href: '/stockman/inventory/movements' },
+        { title: 'Products', href: '/stockman/products' },
+        { title: 'Categories', href: '/stockman/categories' },
+        { title: 'Stock Levels', href: '/stockman/stock-levels' },
+        { title: 'Expiry', href: '/stockman/expiry' },
+        {
+          title: 'Operations',
+          href: '/stockman/receiving',
+          matchPaths: [
+            '/stockman/receiving',
+            '/stockman/breakdown',
+            '/stockman/transfer',
+            '/stockman/adjustments',
+            '/stockman/movements',
+          ],
+        },
       ],
     },
     { title: 'Suppliers', href: '/stockman/suppliers', icon: 'Truck' },
@@ -123,6 +138,9 @@ export function canAccessPath(role: UserRole, path: string): boolean {
   const checkItems = (items: NavItem[]): boolean => {
     for (const item of items) {
       if (path.startsWith(item.href)) return true
+      if (item.matchPaths?.some(matchPath => path === matchPath || path.startsWith(matchPath + '/'))) {
+        return true
+      }
       if (item.children && checkItems(item.children)) return true
     }
     return false
