@@ -1,8 +1,5 @@
 <?php
-header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST');
-header('Access-Control-Allow-Headers: Content-Type');
+require_once __DIR__ . '/../middleware/cors.php';
 
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../includes/inventory.php';
@@ -77,6 +74,63 @@ try {
     ];
     $stmt->execute($updateParams);
 
+    $batchSql = "SELECT id, {$sourceTier}Qty
+        FROM product_batches
+        WHERE productId = :productId
+          AND status != 'disposed'
+          AND {$sourceTier}Qty > 0";
+    $batchParams = [':productId' => $productId];
+
+    if ($variantId !== null && $variantId !== '') {
+        $batchSql .= " AND variantId = :variantId";
+        $batchParams[':variantId'] = $variantId;
+    } else {
+        $batchSql .= " AND variantId IS NULL";
+    }
+
+    $batchSql .= " ORDER BY expirationDate ASC, receivedDate ASC FOR UPDATE";
+
+    $stmt = $pdo->prepare($batchSql);
+    $stmt->execute($batchParams);
+    $batches = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $remainingToTransfer = $quantity;
+    $affectedBatchIds = [];
+
+    foreach ($batches as $batch) {
+        if ($remainingToTransfer <= 0) {
+            break;
+        }
+
+        $availableSourceQty = (int) $batch["{$sourceTier}Qty"];
+        if ($availableSourceQty <= 0) {
+            continue;
+        }
+
+        $quantityToTransfer = min($remainingToTransfer, $availableSourceQty);
+
+        $updateBatchStmt = $pdo->prepare(
+            "UPDATE product_batches
+             SET {$sourceTier}Qty = {$sourceTier}Qty - :quantity,
+                 {$destTier}Qty = {$destTier}Qty + :quantity
+             WHERE id = :id"
+        );
+        $updateBatchStmt->execute([
+            ':quantity' => $quantityToTransfer,
+            ':id' => $batch['id'],
+        ]);
+
+        $remainingToTransfer -= $quantityToTransfer;
+        $affectedBatchIds[] = $batch['id'];
+    }
+
+    if ($remainingToTransfer > 0) {
+        $pdo->rollBack();
+        http_response_code(400);
+        echo json_encode(['error' => 'Insufficient batch stock to complete transfer']);
+        exit;
+    }
+
     $movementId = bin2hex(random_bytes(16));
     insertStockMovement($pdo, [
         'id' => $movementId,
@@ -86,6 +140,8 @@ try {
         'fromTier' => $sourceTier,
         'toTier' => $destTier,
         'quantity' => $quantity,
+        'reason' => 'Stock transferred between inventory tiers',
+        'notes' => "Transferred {$quantity} unit(s) from {$sourceTier} to {$destTier}",
         'performedBy' => $userId,
     ]);
 
@@ -100,7 +156,7 @@ try {
         $activityId,
         $userId,
         $userName,
-        "Transferred {$quantity} units from {$sourceTier} to {$destTier} for product {$productId}",
+        "Transferred {$quantity} units from {$sourceTier} to {$destTier} for product {$productId}" . ($variantId ? " (variant {$variantId})" : ''),
     ]);
 
     $pdo->commit();
@@ -110,6 +166,7 @@ try {
         'message' => 'Stock transfer completed',
         'movementId' => $movementId,
         'updatedInventory' => $updated,
+        'affectedBatchIds' => $affectedBatchIds,
     ]);
 
 } catch (Exception $e) {

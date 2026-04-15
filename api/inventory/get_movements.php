@@ -1,8 +1,4 @@
 <?php
-header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET');
-header('Access-Control-Allow-Headers: Content-Type');
 
 require_once __DIR__ . '/../middleware/cors.php';
 require_once __DIR__ . '/../../config/db.php';
@@ -31,6 +27,10 @@ try {
         ? "LEFT JOIN users u ON sm.{$actorColumn} = u.id"
         : '';
 
+    $notesSelect = stockMovementsHasColumn($pdo, 'notes')
+        ? 'sm.notes'
+        : 'NULL AS notes';
+
     $stmt = $pdo->query(
         "SELECT
             sm.id,
@@ -43,6 +43,7 @@ try {
             sm.toTier,
             sm.quantity,
             sm.reason,
+            {$notesSelect},
             {$performedBySelect},
             sm.createdAt
         FROM stock_movements sm

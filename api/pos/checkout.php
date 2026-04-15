@@ -137,6 +137,8 @@ try {
             ':id' => $inventoryId,
         ]);
 
+        $batchAllocations = moveBatchStockFEFO($pdo, $productId, $variantId, $tier, null, $quantity);
+
         insertStockMovement($pdo, [
             'id' => bin2hex(random_bytes(16)),
             'productId' => $productId,
@@ -146,6 +148,7 @@ try {
             'toTier' => null,
             'quantity' => $quantity,
             'reason' => 'POS checkout',
+            'notes' => buildBatchAllocationMovementNotes('transaction_item', $itemId, $batchAllocations),
             'performedBy' => $cashierId,
         ]);
 

@@ -1,8 +1,5 @@
 <?php
-header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST');
-header('Access-Control-Allow-Headers: Content-Type');
+require_once __DIR__ . '/../middleware/cors.php';
 
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../includes/inventory.php';
@@ -56,6 +53,11 @@ $pdo = Database::getInstance();
 
 try {
     $pdo->beginTransaction();
+
+    $stmt = $pdo->prepare("SELECT name FROM users WHERE id = ?");
+    $stmt->execute([$userId]);
+    $userRow = $stmt->fetch(PDO::FETCH_ASSOC);
+    $userName = $userRow['name'] ?? 'Unknown';
 
     // Get inventory with row locking
     $inventory = getOrCreateInventoryLevel($pdo, $productId, $variantId, true);
@@ -112,16 +114,16 @@ try {
     $tierName = $tierNames[$tier];
 
     $stmt = $pdo->prepare("
-        INSERT INTO activity_logs (id, userId, action, module, description, details, createdAt)
-        VALUES (?, ?, ?, ?, ?, ?, NOW())
+        INSERT INTO activity_logs (id, userId, userName, action, details, createdAt)
+        VALUES (?, ?, ?, ?, ?, NOW())
     ");
     $stmt->execute([
         bin2hex(random_bytes(8)),
         $userId,
+        $userName,
         'adjust_stock',
-        'inventory',
-        $action . ' ' . abs($quantityChange) . ' unit(s) ' . ($quantityChange > 0 ? 'to' : 'from') . ' ' . $tierName,
-        'Product ID: ' . $productId . ' | Reason: ' . $reason . ' | Notes: ' . $notes
+        $action . ' ' . abs($quantityChange) . ' unit(s) ' . ($quantityChange > 0 ? 'to' : 'from') . ' ' . $tierName .
+            ' | Product ID: ' . $productId . ' | Reason: ' . $reason . ' | Notes: ' . $notes
     ]);
 
     $pdo->commit();
@@ -137,7 +139,9 @@ try {
     ]);
 
 } catch (Exception $e) {
-    $pdo->rollBack();
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     http_response_code(500);
     echo json_encode(['error' => 'Failed to adjust stock: ' . $e->getMessage()]);
 }

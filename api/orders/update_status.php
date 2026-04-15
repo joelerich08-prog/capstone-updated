@@ -114,6 +114,15 @@ try {
                 ':id' => $inventory['id'],
             ]);
 
+            $batchAllocations = moveBatchStockFEFO(
+                $pdo,
+                $item['productId'],
+                $variantId,
+                $inventoryTier,
+                null,
+                (int) $item['quantity']
+            );
+
             $movementId = bin2hex(random_bytes(16));
             insertStockMovement($pdo, [
                 'id' => $movementId,
@@ -123,6 +132,8 @@ try {
                 'fromTier' => $inventoryTier,
                 'toTier' => null,
                 'quantity' => $item['quantity'],
+                'reason' => 'Order fulfillment',
+                'notes' => buildBatchAllocationMovementNotes('order_item', (string) $item['id'], $batchAllocations),
                 'performedBy' => $userId,
             ]);
 
@@ -153,6 +164,24 @@ try {
                 ':quantity' => $item['quantity'],
                 ':id' => $inventory['id'],
             ]);
+
+            $recordedAllocations = fetchRecordedBatchAllocations(
+                $pdo,
+                'sale',
+                'order_item',
+                (string) $item['id'],
+                (string) $item['productId'],
+                $variantId
+            );
+
+            restoreBatchStock(
+                $pdo,
+                (string) $item['productId'],
+                $variantId,
+                $inventoryTier,
+                (int) $item['quantity'],
+                $recordedAllocations
+            );
         }
     }
 

@@ -150,6 +150,24 @@ try {
             ':id' => $inventory['id'],
         ]);
 
+        $recordedAllocations = fetchRecordedBatchAllocations(
+            $pdo,
+            'sale',
+            'transaction_item',
+            (string) $item['id'],
+            $productId,
+            $variantId
+        );
+
+        $restoredAllocations = restoreBatchStock(
+            $pdo,
+            $productId,
+            $variantId,
+            $tier,
+            $quantity,
+            $recordedAllocations
+        );
+
         $movementId = bin2hex(random_bytes(16));
         insertStockMovement($pdo, [
             'id' => $movementId,
@@ -160,6 +178,7 @@ try {
             'toTier' => $tier,
             'quantity' => $quantity,
             'reason' => $reason !== '' ? $reason : 'Admin refund',
+            'notes' => buildBatchAllocationMovementNotes('transaction_item', (string) $item['id'], $restoredAllocations),
             'performedBy' => $userId,
         ]);
     }
