@@ -30,22 +30,33 @@ import { useAuth } from '@/contexts/auth-context'
 import { ArrowRight, Package, Store, Warehouse, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 
+const BASE_PRODUCT_VALUE = '__base__'
+
 export function StockTransferPanel() {
-  const { inventoryLevels, transferStock } = useInventory()
+  const { inventoryLevels, getInventory, transferStock } = useInventory()
   const { user } = useAuth()
   const { products } = useProducts()
   const [selectedProduct, setSelectedProduct] = useState<string>('')
+  const [selectedVariant, setSelectedVariant] = useState<string>('')
   const [quantity, setQuantity] = useState<number>(1)
   const [isConfirmOpen, setIsConfirmOpen] = useState(false)
 
-  const inventory = selectedProduct
-    ? inventoryLevels.find((inv) => inv.productId === selectedProduct)
-    : null
+  const inventory = selectedProduct ? getInventory(selectedProduct, selectedVariant || undefined) : null
   const product = selectedProduct
     ? products.find((p) => p.id === selectedProduct)
     : null
+  const selectedProductVariants = product?.variants ?? []
+  const requiresVariantSelection = selectedProductVariants.length > 0
+  const hasBaseInventoryRow = selectedProduct
+    ? inventoryLevels.some((level) => level.productId === selectedProduct && !level.variantId)
+    : false
 
   const handleTransferClick = () => {
+    if (requiresVariantSelection && !selectedVariant) {
+      toast.error('Please select a variant for this product')
+      return
+    }
+
     if (!selectedProduct || !inventory || quantity <= 0) {
       toast.error('Please select a product and quantity')
       return
@@ -63,11 +74,12 @@ export function StockTransferPanel() {
     if (!selectedProduct || !inventory) return
 
     const userName = user?.name || 'Unknown User'
-    const result = await transferStock(selectedProduct, 'retail', 'shelf', quantity, userName)
+    const result = await transferStock(selectedProduct, 'retail', 'shelf', quantity, userName, selectedVariant || undefined)
 
     if (result.success) {
       toast.success(`Transfer complete: ${quantity} ${inventory.retailUnit}(s) moved to shelf`)
       setSelectedProduct('')
+      setSelectedVariant('')
       setQuantity(1)
     } else {
       toast.error(result.error || 'Transfer failed')
@@ -76,8 +88,10 @@ export function StockTransferPanel() {
   }
 
   const productsWithRetailStock = products.filter((prod) => {
-    const inv = inventoryLevels.find((i) => i.productId === prod.id)
-    return inv && inv.retailQty > 0
+    const totalRetail = inventoryLevels
+      .filter((i) => i.productId === prod.id)
+      .reduce((sum, level) => sum + level.retailQty, 0)
+    return totalRetail > 0
   })
 
   const lowShelfProducts = inventoryLevels
@@ -99,22 +113,49 @@ export function StockTransferPanel() {
           <FieldGroup>
             <Field>
               <FieldLabel>Select Product</FieldLabel>
-              <Select value={selectedProduct} onValueChange={setSelectedProduct}>
+              <Select value={selectedProduct} onValueChange={(value) => {
+                  setSelectedProduct(value)
+                  setSelectedVariant('')
+                }}>
                 <SelectTrigger>
                   <SelectValue placeholder="Choose a product" />
                 </SelectTrigger>
                 <SelectContent>
                   {productsWithRetailStock.map((prod) => {
-                    const inv = inventoryLevels.find((i) => i.productId === prod.id)
+                    const totalRetail = inventoryLevels
+                      .filter((i) => i.productId === prod.id)
+                      .reduce((sum, level) => sum + level.retailQty, 0)
                     return (
                       <SelectItem key={prod.id} value={prod.id}>
-                        {prod.name} ({inv?.retailQty || 0} packs available)
+                        {prod.name} ({totalRetail} packs available)
                       </SelectItem>
                     )
                   })}
                 </SelectContent>
               </Select>
             </Field>
+
+              {selectedProduct && selectedProductVariants.length > 0 ? (
+                <Field>
+                  <FieldLabel>Variant</FieldLabel>
+                  <Select
+                    value={selectedVariant || (hasBaseInventoryRow ? BASE_PRODUCT_VALUE : '')}
+                    onValueChange={(value) => setSelectedVariant(value === BASE_PRODUCT_VALUE ? '' : value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a variant" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {hasBaseInventoryRow ? <SelectItem value={BASE_PRODUCT_VALUE}>Base product</SelectItem> : null}
+                      {selectedProductVariants.map((variant) => (
+                        <SelectItem key={variant.id} value={variant.id}>
+                          {variant.name}{variant.sku ? ` (${variant.sku})` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              ) : null}
 
             <Field>
               <FieldLabel>
@@ -171,7 +212,11 @@ export function StockTransferPanel() {
             </>
           )}
 
-          <Button className="w-full" onClick={handleTransferClick} disabled={!selectedProduct || quantity <= 0}>
+          <Button
+            className="w-full"
+            onClick={handleTransferClick}
+            disabled={!selectedProduct || quantity <= 0 || (requiresVariantSelection && !selectedVariant)}
+          >
             <ArrowRight className="mr-2 size-4" />
             Confirm Transfer
           </Button>
@@ -195,7 +240,10 @@ export function StockTransferPanel() {
                   <div
                     key={item.id}
                     className="flex cursor-pointer items-center justify-between rounded-lg bg-muted/50 p-2 transition-colors hover:bg-muted"
-                    onClick={() => setSelectedProduct(item.productId)}
+                    onClick={() => {
+                      setSelectedProduct(item.productId)
+                      setSelectedVariant(item.variantId || '')
+                    }}
                   >
                     <div className="flex items-center gap-2">
                       <Package className="size-4 text-muted-foreground" />

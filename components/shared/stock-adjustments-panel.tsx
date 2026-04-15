@@ -56,12 +56,15 @@ const reasonLabels: Record<AdjustmentReason, string> = {
   other: 'Other',
 }
 
+const BASE_PRODUCT_VALUE = '__base__'
+
 export function StockAdjustmentPanel() {
   const { user } = useAuth()
   const { products } = useProducts()
-  const { getInventory, getStock, adjustStock } = useInventory()
+  const { inventoryLevels, getInventory, getStock, adjustStock } = useInventory()
 
   const [selectedProduct, setSelectedProduct] = useState<string>('')
+  const [selectedVariant, setSelectedVariant] = useState<string>('')
   const [tier, setTier] = useState<InventoryTier>('shelf')
   const [adjustmentType, setAdjustmentType] = useState<AdjustmentType>('subtract')
   const [quantity, setQuantity] = useState<number>(1)
@@ -70,9 +73,14 @@ export function StockAdjustmentPanel() {
   const [adjustmentHistory, setAdjustmentHistory] = useState<AdjustmentHistory[]>([])
   const [isConfirmOpen, setIsConfirmOpen] = useState(false)
 
-  const inventory = selectedProduct ? getInventory(selectedProduct) : null
+  const inventory = selectedProduct ? getInventory(selectedProduct, selectedVariant || undefined) : null
   const product = selectedProduct ? products.find((p) => p.id === selectedProduct) : null
-  const currentStock = selectedProduct ? getStock(selectedProduct, tier) : 0
+  const selectedProductVariants = product?.variants ?? []
+  const requiresVariantSelection = selectedProductVariants.length > 0
+  const hasBaseInventoryRow = selectedProduct
+    ? inventoryLevels.some((level) => level.productId === selectedProduct && !level.variantId)
+    : false
+  const currentStock = selectedProduct ? getStock(selectedProduct, tier, selectedVariant || undefined) : 0
 
   useEffect(() => {
     let isMounted = true
@@ -123,6 +131,11 @@ export function StockAdjustmentPanel() {
   }, [])
 
   const handleSubmitClick = () => {
+    if (requiresVariantSelection && !selectedVariant) {
+      toast.error('Please select a variant for this product')
+      return
+    }
+
     if (!selectedProduct || quantity <= 0) {
       toast.error('Please select a product and quantity')
       return
@@ -151,6 +164,7 @@ export function StockAdjustmentPanel() {
       reason,
       notes.trim(),
       user?.name || 'Unknown User',
+      selectedVariant || undefined,
     )
 
     if (result.success) {
@@ -169,10 +183,14 @@ export function StockAdjustmentPanel() {
 
       const action = adjustmentType === 'add' ? 'Added' : 'Removed'
       toast.success(
-        `${action} ${quantity} unit(s) ${adjustmentType === 'add' ? 'to' : 'from'} ${product.name}`,
+        `${action} ${quantity} unit(s) ${adjustmentType === 'add' ? 'to' : 'from'} ${product.name}${selectedVariant ? ` (${products
+          .find((prod) => prod.id === selectedProduct)
+          ?.variants.find((variant) => variant.id === selectedVariant)
+          ?.name || ''})` : ''}`,
       )
 
       setSelectedProduct('')
+      setSelectedVariant('')
       setQuantity(1)
       setNotes('')
     } else {
@@ -194,7 +212,10 @@ export function StockAdjustmentPanel() {
             <FieldGroup>
               <Field>
                 <FieldLabel>Select Product</FieldLabel>
-                <Select value={selectedProduct} onValueChange={setSelectedProduct}>
+                <Select value={selectedProduct} onValueChange={(value) => {
+                    setSelectedProduct(value)
+                    setSelectedVariant('')
+                  }}>
                   <SelectTrigger>
                     <SelectValue placeholder="Choose a product" />
                   </SelectTrigger>
@@ -207,6 +228,28 @@ export function StockAdjustmentPanel() {
                   </SelectContent>
                 </Select>
               </Field>
+
+              {selectedProduct && selectedProductVariants.length > 0 ? (
+                <Field>
+                  <FieldLabel>Variant</FieldLabel>
+                  <Select
+                    value={selectedVariant || (hasBaseInventoryRow ? BASE_PRODUCT_VALUE : '')}
+                    onValueChange={(value) => setSelectedVariant(value === BASE_PRODUCT_VALUE ? '' : value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a variant" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {hasBaseInventoryRow ? <SelectItem value={BASE_PRODUCT_VALUE}>Base product</SelectItem> : null}
+                      {selectedProductVariants.map((variant) => (
+                        <SelectItem key={variant.id} value={variant.id}>
+                          {variant.name}{variant.sku ? ` (${variant.sku})` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              ) : null}
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field>
@@ -324,7 +367,7 @@ export function StockAdjustmentPanel() {
             <Button
               className="w-full"
               onClick={handleSubmitClick}
-              disabled={!selectedProduct || quantity <= 0 || !notes.trim()}
+              disabled={!selectedProduct || quantity <= 0 || !notes.trim() || (requiresVariantSelection && !selectedVariant)}
               variant={adjustmentType === 'subtract' ? 'destructive' : 'default'}
             >
               <Check className="mr-2 size-4" />

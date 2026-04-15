@@ -33,7 +33,9 @@ import { format, addDays, differenceInDays } from 'date-fns'
 
 interface ReceiveItem {
   productId: string
+  variantId?: string
   productName: string
+  variantName?: string
   quantity: number
   tier: 'wholesale' | 'retail'
   unitCost: number
@@ -50,6 +52,8 @@ interface ReceiveHistory {
   totalCost: number
   status: 'completed' | 'pending'
 }
+
+const BASE_PRODUCT_VALUE = '__base__'
 
 const initialReceiveHistory: ReceiveHistory[] = [
   {
@@ -80,11 +84,12 @@ const initialReceiveHistory: ReceiveHistory[] = [
 
 export function ReceiveStockPanel() {
   const { products, suppliers } = useProducts()
-  const { receiveStock } = useInventory()
+  const { inventoryLevels, receiveStock } = useInventory()
   const { user } = useAuth()
   const [receiveHistory, setReceiveHistory] = useState<ReceiveHistory[]>(initialReceiveHistory)
   const [selectedSupplier, setSelectedSupplier] = useState<string>('')
   const [selectedProduct, setSelectedProduct] = useState<string>('')
+  const [selectedVariant, setSelectedVariant] = useState<string>('')
   const [quantity, setQuantity] = useState<number>(1)
   const [tier, setTier] = useState<'wholesale' | 'retail'>('wholesale')
   const [unitCost, setUnitCost] = useState<number>(0)
@@ -94,6 +99,13 @@ export function ReceiveStockPanel() {
   const [batchNumber, setBatchNumber] = useState<string>(generateBatchNumber())
   const [expirationDate, setExpirationDate] = useState<string>(format(addDays(new Date(), 180), 'yyyy-MM-dd'))
   const [manufacturingDate, setManufacturingDate] = useState<string>('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const selectedProductRecord = products.find((p) => p.id === selectedProduct)
+  const selectedProductVariants = selectedProductRecord?.variants ?? []
+  const requiresVariantSelection = selectedProductVariants.length > 0
+  const hasBaseInventoryRow = selectedProduct
+    ? inventoryLevels.some((level) => level.productId === selectedProduct && !level.variantId)
+    : false
 
   const handleAddItem = () => {
     if (!selectedSupplier) {
@@ -111,8 +123,13 @@ export function ReceiveStockPanel() {
       return
     }
 
-    const product = products.find((p) => p.id === selectedProduct)
+    const product = selectedProductRecord
     if (!product) return
+
+    if (requiresVariantSelection && !selectedVariant) {
+      toast.error('Please select a variant for this product')
+      return
+    }
 
     const expDate = new Date(expirationDate)
     const today = new Date()
@@ -150,9 +167,13 @@ export function ReceiveStockPanel() {
       toast.warning('Warning: Product expires in less than 30 days')
     }
 
+    const variant = product.variants.find((v) => v.id === selectedVariant)
+    const variantLabel = variant?.name
+
     const existingIndex = items.findIndex(
       (item) =>
         item.productId === selectedProduct &&
+        item.variantId === variant?.id &&
         item.tier === tier &&
         item.batchNumber === batchNumber,
     )
@@ -166,7 +187,9 @@ export function ReceiveStockPanel() {
         ...items,
         {
           productId: selectedProduct,
+          variantId: variant?.id,
           productName: product.name,
+          variantName: variantLabel,
           quantity,
           tier,
           unitCost: parsedUnitCost,
@@ -178,11 +201,12 @@ export function ReceiveStockPanel() {
     }
 
     setSelectedProduct('')
+    setSelectedVariant('')
     setQuantity(1)
     setUnitCost(0)
     setBatchNumber(generateBatchNumber())
     setManufacturingDate('')
-    toast.success(`Added ${product.name} to receive list`)
+    toast.success(`Added ${product.name}${variantLabel ? ` (${variantLabel})` : ''} to receive list`)
   }
 
   const handleRemoveItem = (index: number) => {
@@ -190,11 +214,17 @@ export function ReceiveStockPanel() {
   }
 
   const handleSubmit = async () => {
+    if (isSubmitting) {
+      return
+    }
+
     if (!selectedSupplier) {
       toast.error('Please select a supplier')
       return
     }
-    if (!invoiceNumber.trim()) {
+    const trimmedInvoiceNumber = invoiceNumber.trim()
+
+    if (!trimmedInvoiceNumber) {
       toast.error('Invoice number is required')
       return
     }
@@ -213,6 +243,8 @@ export function ReceiveStockPanel() {
 
     const receiveItems = items.map((item) => ({
       productId: item.productId,
+      variantId: item.variantId,
+      variantName: item.variantName,
       productName: item.productName,
       quantity: item.quantity,
       cost: item.unitCost,
@@ -222,7 +254,13 @@ export function ReceiveStockPanel() {
       manufacturingDate: item.manufacturingDate ? format(item.manufacturingDate, 'yyyy-MM-dd') : undefined,
     }))
 
-    const result = await receiveStock(receiveItems, supplier.id, supplier.name, invoiceNumber.trim(), userName)
+    setIsSubmitting(true)
+    let result: Awaited<ReturnType<typeof receiveStock>>
+    try {
+      result = await receiveStock(receiveItems, supplier.id, supplier.name, trimmedInvoiceNumber, userName)
+    } finally {
+      setIsSubmitting(false)
+    }
 
     if (result.success) {
       const newReceipt: ReceiveHistory = {
@@ -238,6 +276,10 @@ export function ReceiveStockPanel() {
       toast.success(`Received ${items.length} items with batch tracking`)
       setItems([])
       setSelectedSupplier('')
+      setSelectedProduct('')
+      setSelectedVariant('')
+      setQuantity(1)
+      setUnitCost(0)
       setNotes('')
       setInvoiceNumber(`INV-${Date.now()}`)
       setBatchNumber(generateBatchNumber())
@@ -282,26 +324,50 @@ export function ReceiveStockPanel() {
               <h4 className="mb-4 font-medium">Add Product</h4>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field>
-                  <FieldLabel>Product</FieldLabel>
-                  <Select value={selectedProduct} onValueChange={setSelectedProduct}>
-                    <SelectTrigger><SelectValue placeholder="Select product" /></SelectTrigger>
+                <FieldLabel>Product</FieldLabel>
+                <Select value={selectedProduct} onValueChange={(value) => {
+                  setSelectedProduct(value)
+                  setSelectedVariant('')
+                }}>
+                  <SelectTrigger><SelectValue placeholder="Select product" /></SelectTrigger>
+                  <SelectContent>
+                    {products.map((product) => (
+                      <SelectItem key={product.id} value={product.id}>{product.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              {selectedProduct && selectedProductVariants.length > 0 ? (
+                <Field>
+                  <FieldLabel>Variant</FieldLabel>
+                  <Select
+                    value={selectedVariant || (hasBaseInventoryRow ? BASE_PRODUCT_VALUE : '')}
+                    onValueChange={(value) => setSelectedVariant(value === BASE_PRODUCT_VALUE ? '' : value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a variant" />
+                    </SelectTrigger>
                     <SelectContent>
-                      {products.map((product) => (
-                        <SelectItem key={product.id} value={product.id}>{product.name}</SelectItem>
+                      {hasBaseInventoryRow ? <SelectItem value={BASE_PRODUCT_VALUE}>Base product</SelectItem> : null}
+                      {selectedProductVariants.map((variant) => (
+                        <SelectItem key={variant.id} value={variant.id}>
+                          {variant.name}{variant.sku ? ` (${variant.sku})` : ''}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field>
-                  <FieldLabel>Stock Tier</FieldLabel>
-                  <Select value={tier} onValueChange={(v) => setTier(v as 'wholesale' | 'retail')}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="wholesale">Wholesale (Boxes)</SelectItem>
-                      <SelectItem value="retail">Retail (Packs)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
+              ) : null}
+              <Field>
+                <FieldLabel>Stock Tier</FieldLabel>
+                <Select value={tier} onValueChange={(v) => setTier(v as 'wholesale' | 'retail')}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="wholesale">Wholesale (Boxes)</SelectItem>
+                    <SelectItem value="retail">Retail (Packs)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field>
@@ -316,7 +382,7 @@ export function ReceiveStockPanel() {
               <div className="rounded-lg border border-dashed p-4 mt-4 bg-muted/30">
                 <div className="flex items-center gap-2 mb-3">
                   <Calendar className="size-4 text-muted-foreground" />
-                  <span className="font-medium text-sm">Batch & Expiry Information</span>
+                  <span className="font-medium text-sm">Batch & Expiry</span>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field>
@@ -324,7 +390,7 @@ export function ReceiveStockPanel() {
                     <Input value={batchNumber} onChange={(e) => setBatchNumber(e.target.value)} placeholder="LOT-2024-001" />
                   </Field>
                   <Field>
-                    <FieldLabel>Expiration Date *</FieldLabel>
+                    <FieldLabel>Expiry *</FieldLabel>
                     <Input type="date" value={expirationDate} onChange={(e) => setExpirationDate(e.target.value)} min={format(new Date(), 'yyyy-MM-dd')} />
                   </Field>
                 </div>
@@ -337,7 +403,12 @@ export function ReceiveStockPanel() {
               </div>
             </div>
 
-            <Button onClick={handleAddItem} variant="outline" className="w-full">
+            <Button
+              onClick={handleAddItem}
+              variant="outline"
+              className="w-full"
+              disabled={!selectedProduct || quantity <= 0 || (requiresVariantSelection && !selectedVariant)}
+            >
               <Plus className="mr-2 size-4" />
               Add to List
             </Button>
@@ -350,7 +421,7 @@ export function ReceiveStockPanel() {
                   <TableRow>
                     <TableHead>Product</TableHead>
                     <TableHead>Batch</TableHead>
-                    <TableHead>Expires</TableHead>
+                    <TableHead>Expiry</TableHead>
                     <TableHead className="text-right">Qty</TableHead>
                     <TableHead className="text-right">Cost</TableHead>
                     <TableHead className="w-12"></TableHead>
@@ -403,9 +474,9 @@ export function ReceiveStockPanel() {
               <p className="text-sm text-muted-foreground">Total Items: <span className="font-medium text-foreground">{totalItems}</span></p>
               <p className="text-lg font-bold">Total: {formatCurrency(totalCost)}</p>
             </div>
-            <Button onClick={handleSubmit} disabled={items.length === 0}>
+            <Button onClick={handleSubmit} disabled={items.length === 0 || !selectedSupplier || !invoiceNumber.trim() || isSubmitting}>
               <Check className="mr-2 size-4" />
-              Complete Receipt
+              {isSubmitting ? 'Completing...' : 'Complete Receipt'}
             </Button>
           </div>
         </CardContent>

@@ -29,26 +29,37 @@ import { useAuth } from '@/contexts/auth-context'
 import { ArrowDown, Boxes, Package, PackageOpen } from 'lucide-react'
 import { toast } from 'sonner'
 
+const BASE_PRODUCT_VALUE = '__base__'
+
 export function StockBreakdownPanel() {
-  const { inventoryLevels, breakdownStock } = useInventory()
+  const { inventoryLevels, getInventory, breakdownStock } = useInventory()
   const { user } = useAuth()
   const { products } = useProducts()
   const [selectedProduct, setSelectedProduct] = useState<string>('')
+  const [selectedVariant, setSelectedVariant] = useState<string>('')
   const [quantity, setQuantity] = useState<number>(1)
   const [isConfirmOpen, setIsConfirmOpen] = useState(false)
 
-  const inventory = selectedProduct
-    ? inventoryLevels.find((inv) => inv.productId === selectedProduct)
-    : null
+  const inventory = selectedProduct ? getInventory(selectedProduct, selectedVariant) : null
   const product = selectedProduct
     ? products.find((p) => p.id === selectedProduct)
     : null
+  const selectedProductVariants = product?.variants ?? []
+  const requiresVariantSelection = selectedProductVariants.length > 0
+  const hasBaseInventoryRow = selectedProduct
+    ? inventoryLevels.some((level) => level.productId === selectedProduct && !level.variantId)
+    : false
   const breakableProducts = products.filter((prod) => {
-    const currentInventory = inventoryLevels.find((level) => level.productId === prod.id)
-    return currentInventory && currentInventory.wholesaleQty > 0 && currentInventory.packsPerBox > 0
+    const matchingInventory = inventoryLevels.filter((level) => level.productId === prod.id)
+    return matchingInventory.some((level) => level.wholesaleQty > 0 && level.packsPerBox > 0)
   })
 
   const handleBreakdownClick = () => {
+    if (requiresVariantSelection && !selectedVariant) {
+      toast.error('Please select a variant for this product')
+      return
+    }
+
     if (!selectedProduct || !inventory || quantity <= 0) {
       toast.error('Please select a product and quantity')
       return
@@ -71,7 +82,7 @@ export function StockBreakdownPanel() {
     if (!selectedProduct || !inventory) return
 
     const userName = user?.name || 'Unknown User'
-    const result = await breakdownStock(selectedProduct, quantity, userName)
+    const result = await breakdownStock(selectedProduct, quantity, userName, selectedVariant || undefined)
 
     if (result.success) {
       toast.success(
@@ -79,6 +90,7 @@ export function StockBreakdownPanel() {
       )
       setQuantity(1)
       setSelectedProduct('')
+      setSelectedVariant('')
     } else {
       toast.error(result.error || 'Breakdown failed')
     }
@@ -97,7 +109,10 @@ export function StockBreakdownPanel() {
             <FieldGroup>
               <Field>
                 <FieldLabel>Select Product</FieldLabel>
-                <Select value={selectedProduct} onValueChange={setSelectedProduct}>
+                <Select value={selectedProduct} onValueChange={(value) => {
+                    setSelectedProduct(value)
+                    setSelectedVariant('')
+                  }}>
                   <SelectTrigger>
                     <SelectValue placeholder="Choose a product" />
                   </SelectTrigger>
@@ -110,6 +125,28 @@ export function StockBreakdownPanel() {
                   </SelectContent>
                 </Select>
               </Field>
+
+              {selectedProduct && selectedProductVariants.length > 0 ? (
+                <Field>
+                  <FieldLabel>Variant</FieldLabel>
+                  <Select
+                    value={selectedVariant || (hasBaseInventoryRow ? BASE_PRODUCT_VALUE : '')}
+                    onValueChange={(value) => setSelectedVariant(value === BASE_PRODUCT_VALUE ? '' : value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a variant" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {hasBaseInventoryRow ? <SelectItem value={BASE_PRODUCT_VALUE}>Base product</SelectItem> : null}
+                      {selectedProductVariants.map((variant) => (
+                        <SelectItem key={variant.id} value={variant.id}>
+                          {variant.name}{variant.sku ? ` (${variant.sku})` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              ) : null}
 
               <Field>
                 <FieldLabel>
@@ -170,7 +207,7 @@ export function StockBreakdownPanel() {
             <Button
               className="w-full"
               onClick={handleBreakdownClick}
-              disabled={!selectedProduct || quantity <= 0}
+              disabled={!selectedProduct || quantity <= 0 || (requiresVariantSelection && !selectedVariant)}
             >
               <Package className="mr-2 size-4" />
               Confirm Breakdown

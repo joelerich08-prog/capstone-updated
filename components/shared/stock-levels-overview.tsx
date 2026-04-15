@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { Fragment } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -23,7 +24,7 @@ import {
 import { useProducts } from '@/contexts/products-context'
 import { useInventory } from '@/contexts/inventory-context'
 import type { InventoryLevel, Product } from '@/lib/types'
-import { Search, Package, ArrowRight, AlertTriangle, Box } from 'lucide-react'
+import { Search, Package, ArrowRight, AlertTriangle, Box, ChevronDown, ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 import { usePagination } from '@/hooks/use-pagination'
 import { TablePagination } from '@/components/shared/table-pagination'
@@ -33,6 +34,10 @@ type InventoryWithProduct = InventoryLevel & {
   totalStock: number
   isLowStock: boolean
   isOutOfStock: boolean
+}
+
+type VariantInventoryWithProduct = InventoryWithProduct & {
+  variantName: string
 }
 
 interface StockLevelsOverviewProps {
@@ -50,57 +55,263 @@ export function StockLevelsOverview({
   showActions = false,
   productHrefPrefix = '',
 }: StockLevelsOverviewProps) {
-  const { inventoryLevels } = useInventory()
+  const { inventoryLevels, getInventory } = useInventory()
   const { products, categories } = useProducts()
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [stockFilter, setStockFilter] = useState<string>('all')
+  const [expandedProducts, setExpandedProducts] = useState<Record<string, boolean>>({})
+
+  const calculateTotalUnits = (inventory?: InventoryLevel) => {
+    if (!inventory) {
+      return 0
+    }
+
+    const pcsPerPack = inventory.pcsPerPack > 0 ? inventory.pcsPerPack : 1
+    const packsPerBox = inventory.packsPerBox > 0 ? inventory.packsPerBox : 1
+
+    return (
+      inventory.wholesaleQty * packsPerBox * pcsPerPack +
+      inventory.retailQty * pcsPerPack +
+      inventory.shelfQty
+    )
+  }
+
+  const buildInventoryRow = (
+    product: Product,
+    inventory: InventoryLevel | undefined,
+    variantName?: string,
+    variantId?: string,
+  ): InventoryWithProduct | VariantInventoryWithProduct => {
+    const totalStock = calculateTotalUnits(inventory)
+    const reorderLevel = inventory?.reorderLevel ?? 0
+
+    return {
+      id: inventory?.id ?? `${product.id}::${variantId ?? 'base'}::stock-overview`,
+      productId: product.id,
+      variantId,
+      wholesaleQty: inventory?.wholesaleQty ?? 0,
+      retailQty: inventory?.retailQty ?? 0,
+      shelfQty: inventory?.shelfQty ?? 0,
+      wholesaleUnit: inventory?.wholesaleUnit ?? 'box',
+      retailUnit: inventory?.retailUnit ?? 'pack',
+      shelfUnit: inventory?.shelfUnit ?? 'pack',
+      pcsPerPack: inventory?.pcsPerPack ?? 1,
+      packsPerBox: inventory?.packsPerBox ?? 1,
+      reorderLevel,
+      updatedAt: inventory?.updatedAt ?? product.createdAt,
+      product,
+      totalStock,
+      isLowStock: reorderLevel > 0 && totalStock <= reorderLevel && totalStock > 0,
+      isOutOfStock: totalStock === 0,
+      ...(variantName ? { variantName } : {}),
+    }
+  }
+
+  const matchesFilters = (
+    inv: InventoryWithProduct | VariantInventoryWithProduct,
+    searchValue: string,
+    categoryValue: string,
+    stockValue: string,
+  ) => {
+    const normalizedSearch = searchValue.toLowerCase()
+    const matchesSearch =
+      inv.product.name.toLowerCase().includes(normalizedSearch) ||
+      inv.product.sku.toLowerCase().includes(normalizedSearch) ||
+      ('variantName' in inv && inv.variantName.toLowerCase().includes(normalizedSearch))
+    const matchesCategory = categoryValue === 'all' || inv.product.categoryId === categoryValue
+    const matchesStock =
+      stockValue === 'all' ||
+      (stockValue === 'low' && inv.isLowStock) ||
+      (stockValue === 'out' && inv.isOutOfStock) ||
+      (stockValue === 'ok' && !inv.isLowStock && !inv.isOutOfStock)
+
+    return matchesSearch && matchesCategory && matchesStock
+  }
 
   const inventoryData = useMemo(() => {
-    return inventoryLevels
-      .map((inv): InventoryWithProduct | null => {
-        const product = products.find((p) => p.id === inv.productId)
-        if (!product) {
-          return null
-        }
+    return products.map((product): InventoryWithProduct => {
+      const inventory = inventoryLevels.find(
+        (level) => level.productId === product.id && !level.variantId,
+      )
 
-        return {
-          ...inv,
-          product,
-          totalStock: inv.wholesaleQty + inv.retailQty + inv.shelfQty,
-          isLowStock: inv.shelfQty <= inv.reorderLevel && inv.shelfQty > 0,
-          isOutOfStock: inv.shelfQty === 0,
-        }
-      })
-      .filter((inv): inv is InventoryWithProduct => inv !== null)
+      return buildInventoryRow(product, inventory) as InventoryWithProduct
+    })
   }, [inventoryLevels, products])
+
+  const variantInventoryByProduct = useMemo(() => {
+    const inventoryByProduct = new Map<string, VariantInventoryWithProduct[]>()
+
+    products.forEach((product) => {
+      if (product.variants.length === 0) {
+        return
+      }
+
+      const variantRows = product.variants
+        .map((variant): VariantInventoryWithProduct => {
+          const inventory = getInventory(product.id, variant.id)
+          return buildInventoryRow(product, inventory, variant.name, variant.id) as VariantInventoryWithProduct
+        })
+        .sort((left, right) => left.variantName.localeCompare(right.variantName))
+
+      inventoryByProduct.set(product.id, variantRows)
+    })
+
+    return inventoryByProduct
+  }, [getInventory, products])
 
   const filteredData = useMemo(() => {
     return inventoryData.filter((inv) => {
-      const matchesSearch =
-        inv.product.name.toLowerCase().includes(search.toLowerCase()) ||
-        inv.product.sku.toLowerCase().includes(search.toLowerCase())
-      const matchesCategory = categoryFilter === 'all' || inv.product.categoryId === categoryFilter
-      const matchesStock =
-        stockFilter === 'all' ||
-        (stockFilter === 'low' && inv.isLowStock) ||
-        (stockFilter === 'out' && inv.isOutOfStock) ||
-        (stockFilter === 'ok' && !inv.isLowStock && !inv.isOutOfStock)
+      if (matchesFilters(inv, search, categoryFilter, stockFilter)) {
+        return true
+      }
 
-      return matchesSearch && matchesCategory && matchesStock
+      const matchingVariants = (variantInventoryByProduct.get(inv.product.id) ?? []).filter((variantInv) =>
+        matchesFilters(variantInv, search, categoryFilter, stockFilter),
+      )
+
+      return matchingVariants.length > 0
     })
-  }, [inventoryData, search, categoryFilter, stockFilter])
+  }, [categoryFilter, inventoryData, search, stockFilter, variantInventoryByProduct])
+
+  const filteredVariantInventoryByProduct = useMemo(() => {
+    const filteredVariants = new Map<string, VariantInventoryWithProduct[]>()
+
+    variantInventoryByProduct.forEach((variantRows, productId) => {
+      filteredVariants.set(
+        productId,
+        variantRows.filter((variantInv) => matchesFilters(variantInv, search, categoryFilter, stockFilter)),
+      )
+    })
+
+    return filteredVariants
+  }, [categoryFilter, search, stockFilter, variantInventoryByProduct])
 
   const stats = {
     total: inventoryData.length,
-    lowStock: inventoryData.filter((i) => i.isLowStock).length,
-    outOfStock: inventoryData.filter((i) => i.isOutOfStock).length,
+    lowStock:
+      inventoryData.filter((i) => i.isLowStock).length +
+      Array.from(variantInventoryByProduct.values()).flat().filter((i) => i.isLowStock).length,
+    outOfStock:
+      inventoryData.filter((i) => i.isOutOfStock).length +
+      Array.from(variantInventoryByProduct.values()).flat().filter((i) => i.isOutOfStock).length,
   }
 
   const pagination = usePagination(filteredData, { itemsPerPage: 10 })
   const getCategoryName = (categoryId: string) => {
     return categories.find((category) => category.id === categoryId)?.name ?? 'Unknown'
   }
+
+  const toggleProductVariants = (productId: string) => {
+    setExpandedProducts((current) => ({
+      ...current,
+      [productId]: !current[productId],
+    }))
+  }
+
+  const renderInventoryRow = (inv: InventoryWithProduct | VariantInventoryWithProduct, isVariant = false) => (
+    <TableRow key={isVariant ? `${inv.productId}-${inv.variantId}` : inv.id}>
+      <TableCell>
+        <div className="flex items-center gap-2">
+          {!isVariant && inv.product.variants.length > 0 ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              onClick={() => toggleProductVariants(inv.product.id)}
+              title={expandedProducts[inv.product.id] ? 'Hide variants' : 'Show variants'}
+            >
+              {expandedProducts[inv.product.id] ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+            </Button>
+          ) : (
+            <span className={`${isVariant ? 'ml-9' : 'ml-0'} flex items-center`}>
+              <Package className={`size-4 text-muted-foreground ${isVariant ? 'opacity-60' : ''}`} />
+            </span>
+          )}
+          <div>
+            <div className={`font-medium ${isVariant ? 'text-sm' : ''}`}>
+              {isVariant ? (inv as VariantInventoryWithProduct).variantName : inv.product.name}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {isVariant ? `Variant of ${inv.product.name}` : getCategoryName(inv.product.categoryId)}
+            </div>
+          </div>
+        </div>
+      </TableCell>
+      <TableCell className="text-center">
+        <div className="flex flex-col items-center">
+          <span className="font-medium tabular-nums">{inv.wholesaleQty}</span>
+          <span className="text-xs text-muted-foreground">{inv.wholesaleUnit}</span>
+        </div>
+      </TableCell>
+      <TableCell className="text-center">
+        <div className="flex flex-col items-center">
+          <span className="font-medium tabular-nums">{inv.retailQty}</span>
+          <span className="text-xs text-muted-foreground">{inv.retailUnit}</span>
+        </div>
+      </TableCell>
+      <TableCell className="text-center">
+        <div className="flex flex-col items-center">
+          <span
+            className={`font-medium tabular-nums ${inv.isOutOfStock ? 'text-destructive' : inv.isLowStock ? 'text-orange-600 dark:text-orange-400' : ''}`}
+          >
+            {inv.shelfQty}
+          </span>
+          <span className="text-xs text-muted-foreground">{inv.shelfUnit}</span>
+        </div>
+      </TableCell>
+      {showPackaging && (
+        <TableCell className="text-center">
+          <div className="flex flex-col items-center gap-0.5">
+            <div className="flex items-center gap-1.5">
+              <Box className="size-4 text-muted-foreground" />
+              <span className="text-sm font-medium tabular-nums">
+                1 {inv.wholesaleUnit}
+              </span>
+            </div>
+            <span className="text-xs text-muted-foreground">
+              = {inv.packsPerBox} {inv.retailUnit}
+              {inv.packsPerBox === 1 ? '' : 's'}
+            </span>
+          </div>
+        </TableCell>
+      )}
+      <TableCell className="text-center">
+        <div className="flex flex-col items-center">
+          <span className="font-bold tabular-nums">{inv.totalStock}</span>
+          <span className="text-xs text-muted-foreground">units</span>
+        </div>
+      </TableCell>
+      <TableCell>
+        {inv.isOutOfStock ? (
+          <Badge variant="destructive" className="text-xs">
+            <AlertTriangle className="mr-1 size-3" />
+            Out
+          </Badge>
+        ) : inv.isLowStock ? (
+          <Badge className="border-orange-500/20 bg-orange-500/10 text-xs text-orange-600 dark:text-orange-400">
+            Low ({inv.reorderLevel})
+          </Badge>
+        ) : (
+          <Badge className="border-green-500/20 bg-green-500/10 text-xs text-green-600 dark:text-green-400">
+            OK
+          </Badge>
+        )}
+      </TableCell>
+      {showActions && (
+        <TableCell>
+          {!isVariant && (
+            <Button variant="ghost" size="icon" className="size-8" asChild>
+              <Link href={`${productHrefPrefix}/products?productId=${inv.product.id}&view=1`}>
+                <ArrowRight className="size-4" />
+              </Link>
+            </Button>
+          )}
+        </TableCell>
+      )}
+    </TableRow>
+  )
 
   return (
     <>
@@ -217,91 +428,30 @@ export function StockLevelsOverview({
                 {showPackaging && (
                   <TableHead className="text-center">
                     <div className="flex flex-col items-center">
-                      <span>Packaging</span>
-                      <span className="text-xs font-normal text-muted-foreground">(packs/box)</span>
+                      <span>Wholesale to Retail</span>
+                      <span className="text-xs font-normal text-muted-foreground">(conversion)</span>
                     </div>
                   </TableHead>
                 )}
-                <TableHead className="text-center">Total</TableHead>
+                <TableHead className="text-center">
+                  <div className="flex flex-col items-center">
+                    <span>Total</span>
+                    <span className="text-xs font-normal text-muted-foreground">(units)</span>
+                  </div>
+                </TableHead>
                 <TableHead>Status</TableHead>
                 {showActions && <TableHead className="w-10"></TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {pagination.paginatedItems.map((inv) => (
-                <TableRow key={inv.id}>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Package className="size-4 text-muted-foreground" />
-                      <div>
-                        <div className="font-medium">{inv.product.name}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {getCategoryName(inv.product.categoryId)}
-                        </div>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <div className="flex flex-col items-center">
-                      <span className="font-medium tabular-nums">{inv.wholesaleQty}</span>
-                      <span className="text-xs text-muted-foreground">{inv.wholesaleUnit}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <div className="flex flex-col items-center">
-                      <span className="font-medium tabular-nums">{inv.retailQty}</span>
-                      <span className="text-xs text-muted-foreground">{inv.retailUnit}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <div className="flex flex-col items-center">
-                      <span
-                        className={`font-medium tabular-nums ${inv.isOutOfStock ? 'text-destructive' : inv.isLowStock ? 'text-orange-600 dark:text-orange-400' : ''}`}
-                      >
-                        {inv.shelfQty}
-                      </span>
-                      <span className="text-xs text-muted-foreground">{inv.shelfUnit}</span>
-                    </div>
-                  </TableCell>
-                  {showPackaging && (
-                    <TableCell className="text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <Box className="size-4 text-muted-foreground" />
-                        <span className="text-sm font-medium tabular-nums">
-                          {inv.packsPerBox} packs/box
-                        </span>
-                      </div>
-                    </TableCell>
-                  )}
-                  <TableCell className="text-center">
-                    <span className="font-bold tabular-nums">{inv.totalStock}</span>
-                  </TableCell>
-                  <TableCell>
-                    {inv.isOutOfStock ? (
-                      <Badge variant="destructive" className="text-xs">
-                        <AlertTriangle className="mr-1 size-3" />
-                        Out
-                      </Badge>
-                    ) : inv.isLowStock ? (
-                      <Badge className="border-orange-500/20 bg-orange-500/10 text-xs text-orange-600 dark:text-orange-400">
-                        Low ({inv.reorderLevel})
-                      </Badge>
-                  ) : (
-                    <Badge className="border-green-500/20 bg-green-500/10 text-xs text-green-600 dark:text-green-400">
-                      OK
-                    </Badge>
-                  )}
-                  </TableCell>
-                  {showActions && (
-                    <TableCell>
-                      <Button variant="ghost" size="icon" className="size-8" asChild>
-                        <Link href={`${productHrefPrefix}/products/${inv.product.id}`}>
-                          <ArrowRight className="size-4" />
-                        </Link>
-                      </Button>
-                    </TableCell>
-                  )}
-                </TableRow>
+                <Fragment key={inv.id}>
+                  {renderInventoryRow(inv)}
+                  {expandedProducts[inv.product.id] &&
+                    (filteredVariantInventoryByProduct.get(inv.product.id) ?? []).map((variantInv) =>
+                      renderInventoryRow(variantInv, true),
+                    )}
+                </Fragment>
               ))}
             </TableBody>
           </Table>

@@ -192,7 +192,7 @@ export function StockMovementHistory() {
               </div>
               <div>
                 <p className="text-2xl font-bold tabular-nums">{stats.received.toLocaleString()}</p>
-                <p className="text-sm text-muted-foreground">Units Received</p>
+                <p className="text-sm text-muted-foreground">Receive Qty (Raw)</p>
               </div>
             </div>
           </CardContent>
@@ -231,7 +231,7 @@ export function StockMovementHistory() {
               </div>
               <div>
                 <p className="text-2xl font-bold tabular-nums">{stats.sales.toLocaleString()}</p>
-                <p className="text-sm text-muted-foreground">Units Sold</p>
+                <p className="text-sm text-muted-foreground">Sale Qty (Raw)</p>
               </div>
             </div>
           </CardContent>
