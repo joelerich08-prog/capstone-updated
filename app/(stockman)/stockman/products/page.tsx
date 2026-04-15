@@ -308,16 +308,22 @@ export default function StockmanProductsPage() {
                   <Separator />
                   <div>
                     <span className="text-sm text-muted-foreground">Variants</span>
-                    <div className="flex flex-wrap gap-2 mt-2">
+                    <div className="space-y-2 mt-2">
                       {selectedProduct.variants.map(v => (
-                        <Badge key={v.id} variant="outline">
-                          {v.name}
-                          {v.priceAdjustment !== 0 && (
-                            <span className="ml-1 text-muted-foreground">
-                              ({v.priceAdjustment > 0 ? '+' : ''}{formatPeso(v.priceAdjustment)})
-                            </span>
-                          )}
-                        </Badge>
+                        <div key={v.id} className="rounded-lg border p-3">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline">
+                              {v.name}
+                              {v.priceAdjustment !== 0 && (
+                                <span className="ml-1 text-muted-foreground">
+                                  ({v.priceAdjustment > 0 ? '+' : ''}{formatPeso(v.priceAdjustment)})
+                                </span>
+                              )}
+                            </Badge>
+                          </div>
+                          <p className="mt-2 text-xs text-muted-foreground">Generated SKU</p>
+                          <p className="font-mono text-sm">{v.sku || '-'}</p>
+                        </div>
                       ))}
                     </div>
                   </div>

@@ -13,6 +13,7 @@ export default function StockLevelsPage() {
       <StockLevelsOverview
         breakdownHref="/admin/inventory/breakdown"
         transferHref="/admin/inventory/transfer"
+        showPackaging
         showActions
         productHrefPrefix="/admin/inventory"
       />

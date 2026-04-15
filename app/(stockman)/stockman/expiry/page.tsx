@@ -71,7 +71,7 @@ export default function ExpiryManagementPage() {
     getBatchSummary,
     disposeBatch,
   } = useBatches()
-  const { adjustStock } = useInventory()
+  const { adjustStock, getInventory } = useInventory()
   const { user } = useAuth()
   
   const [searchQuery, setSearchQuery] = useState('')
@@ -85,6 +85,41 @@ export default function ExpiryManagementPage() {
   const criticalBatches = getCriticalBatches()
   const expiringBatches = getExpiringBatches()
   const expiredBatches = getExpiredBatches()
+
+  const getBatchInventory = (productId: string, variantId?: string) => {
+    return getInventory(productId, variantId)
+  }
+
+  const getBatchTotalUnits = (batch: typeof batches[0]) => {
+    const inventory = getBatchInventory(batch.productId, batch.variantId)
+    const pcsPerPack = inventory?.pcsPerPack && inventory.pcsPerPack > 0 ? inventory.pcsPerPack : 1
+    const packsPerBox = inventory?.packsPerBox && inventory.packsPerBox > 0 ? inventory.packsPerBox : 1
+
+    return (
+      batch.wholesaleQty * packsPerBox * pcsPerPack +
+      batch.retailQty * pcsPerPack +
+      batch.shelfQty
+    )
+  }
+
+  const getBatchValue = (batch: typeof batches[0]) => {
+    const inventory = getBatchInventory(batch.productId, batch.variantId)
+    const pcsPerPack = inventory?.pcsPerPack && inventory.pcsPerPack > 0 ? inventory.pcsPerPack : 1
+    const packsPerBox = inventory?.packsPerBox && inventory.packsPerBox > 0 ? inventory.packsPerBox : 1
+    const boxEquivalent =
+      batch.wholesaleQty +
+      batch.retailQty / packsPerBox +
+      batch.shelfQty / (packsPerBox * pcsPerPack)
+
+    return boxEquivalent * batch.costPrice
+  }
+
+  const valueAtRisk = batches
+    .filter(batch => {
+      const days = differenceInDays(batch.expirationDate, new Date())
+      return days > 0 && days <= EXPIRY_WARNING_DAYS && batch.status !== 'disposed'
+    })
+    .reduce((sum, batch) => sum + getBatchValue(batch), 0)
 
   // Filter batches
   const filteredBatches = batches.filter(batch => {
@@ -100,7 +135,7 @@ export default function ExpiryManagementPage() {
     }
     if (statusFilter === 'expiring_soon') {
       const days = differenceInDays(batch.expirationDate, new Date())
-      return matchesSearch && days > 0 && days <= EXPIRY_WARNING_DAYS && batch.status !== 'disposed'
+      return matchesSearch && days > EXPIRY_CRITICAL_DAYS && days <= EXPIRY_WARNING_DAYS && batch.status !== 'disposed'
     }
     return matchesSearch && batch.status === statusFilter
   }).sort((a, b) => a.expirationDate.getTime() - b.expirationDate.getTime())
@@ -113,7 +148,7 @@ export default function ExpiryManagementPage() {
     const result = await disposeBatch(selectedBatchId, disposeReason, adjustStock, userName)
     if (result.success) {
       const total = result.disposedQuantities 
-        ? result.disposedQuantities.wholesale + result.disposedQuantities.retail + result.disposedQuantities.shelf 
+        ? getBatchTotalUnits(selectedBatch!)
         : 0
       toast.success(`Batch disposed. ${total} units removed from inventory.`)
       setShowDisposeDialog(false)
@@ -252,7 +287,7 @@ export default function ExpiryManagementPage() {
                 <DollarSign className="size-6 text-amber-600" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{formatCurrency(summary.valueAtRisk)}</p>
+                <p className="text-2xl font-bold">{formatCurrency(valueAtRisk)}</p>
                 <p className="text-sm text-muted-foreground">Value at Risk</p>
               </div>
             </div>
@@ -357,8 +392,8 @@ export default function ExpiryManagementPage() {
               <TableBody>
                 {filteredBatches.map((batch) => {
                   const product = products.find(p => p.id === batch.productId)
-                  const totalQty = batch.wholesaleQty + batch.retailQty + batch.shelfQty
-                  const value = totalQty * batch.costPrice
+                  const totalQty = getBatchTotalUnits(batch)
+                  const value = getBatchValue(batch)
                   
                   return (
                     <TableRow 
@@ -454,7 +489,7 @@ export default function ExpiryManagementPage() {
               <p className="font-medium">{selectedProduct?.name}</p>
               <p className="text-sm text-muted-foreground">Batch: {selectedBatch.batchNumber}</p>
               <p className="text-sm text-muted-foreground">
-                Stock: {selectedBatch.wholesaleQty + selectedBatch.retailQty + selectedBatch.shelfQty} units
+                Stock: {getBatchTotalUnits(selectedBatch)} units
               </p>
             </div>
           )}
@@ -551,10 +586,7 @@ export default function ExpiryManagementPage() {
                   <div>
                     <p className="text-sm text-muted-foreground">Total Value</p>
                     <p className="text-lg font-bold">
-                      {formatCurrency(
-                        (selectedBatch.wholesaleQty + selectedBatch.retailQty + selectedBatch.shelfQty) * 
-                        selectedBatch.costPrice
-                      )}
+                      {formatCurrency(getBatchValue(selectedBatch))}
                     </p>
                   </div>
                   <div className="text-right">

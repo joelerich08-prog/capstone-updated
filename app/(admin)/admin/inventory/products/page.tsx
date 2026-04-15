@@ -1,7 +1,9 @@
 'use client'
 
 import Link from 'next/link'
+import { Fragment } from 'react'
 import { useEffect, useState } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/contexts/auth-context'
 import { useInventory } from '@/contexts/inventory-context'
 import { useProducts } from '@/contexts/products-context'
@@ -53,19 +55,87 @@ import { Card, CardContent } from '@/components/ui/card'
 import type { Product } from '@/lib/types'
 import { apiFetch } from '@/lib/api-client'
 import { formatPeso } from '@/lib/utils/currency'
-import { Plus, Search, MoreHorizontal, Edit, Trash2, Eye } from 'lucide-react'
+import { Plus, Search, MoreHorizontal, Edit, Trash2, Eye, RefreshCw, ChevronDown, ChevronRight, Package } from 'lucide-react'
 import { toast } from 'sonner'
 import { usePagination } from '@/hooks/use-pagination'
 import { TablePagination } from '@/components/shared/table-pagination'
 
+const buildCategorySkuPrefix = (categoryName: string) => {
+  const compact = categoryName.toUpperCase().replace(/[^A-Z0-9]/g, '')
+  return (compact.slice(0, 4) || 'PROD')
+}
+
+const generateCategorySku = (categoryId: string, categories: { id: string; name: string }[], products: Product[]) => {
+  const category = categories.find((item) => item.id === categoryId)
+  if (!category) {
+    return ''
+  }
+
+  const prefix = buildCategorySkuPrefix(category.name)
+  const pattern = new RegExp(`^${prefix}-(\\d+)$`)
+  const nextNumber = products.reduce((max, product) => {
+    if (product.categoryId !== categoryId) {
+      return max
+    }
+
+    const match = product.sku.match(pattern)
+    if (!match) {
+      return max
+    }
+
+    return Math.max(max, parseInt(match[1], 10))
+  }, 0) + 1
+
+  return `${prefix}-${String(nextNumber).padStart(3, '0')}`
+}
+
+const buildVariantSkuBase = (productSku: string, variantName: string) => {
+  const variantPart = variantName.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) || 'VARIANT'
+  return `${productSku.toUpperCase()}-${variantPart}`
+}
+
+const generateVariantSkuPreview = (
+  productId: string,
+  variantName: string,
+  products: Product[],
+  excludeVariantId?: string,
+) => {
+  const product = products.find((item) => item.id === productId)
+  if (!product || !variantName.trim()) {
+    return ''
+  }
+
+  const baseSku = buildVariantSkuBase(product.sku, variantName)
+  const existingSkus = new Set(
+    product.variants
+      .filter((variant) => variant.id !== excludeVariantId)
+      .map((variant) => (variant.sku || '').toUpperCase())
+      .filter(Boolean),
+  )
+
+  if (!existingSkus.has(baseSku)) {
+    return baseSku
+  }
+
+  let suffix = 2
+  while (existingSkus.has(`${baseSku}-${suffix}`)) {
+    suffix += 1
+  }
+
+  return `${baseSku}-${suffix}`
+}
+
 export default function ProductsPage() {
+  const pathname = usePathname()
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const { user } = useAuth()
   const { inventoryLevels, refreshInventory } = useInventory()
   const { products: liveProducts, categories, refreshProducts } = useProducts()
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [products, setProducts] = useState<Product[]>([])
-  const [isRepairingVariantInventory, setIsRepairingVariantInventory] = useState(false)
+  const [isSyncingProducts, setIsSyncingProducts] = useState(false)
   
   useEffect(() => {
     if (user?.role !== 'admin') {
@@ -99,7 +169,24 @@ export default function ProductsPage() {
       isMounted = false
     }
   }, [liveProducts, user?.role])
-  
+
+  useEffect(() => {
+    const productId = searchParams.get('productId')
+    const shouldOpenView = searchParams.get('view') === '1'
+
+    if (!productId || !shouldOpenView || products.length === 0) {
+      return
+    }
+
+    const matchedProduct = products.find((product) => product.id === productId)
+    if (!matchedProduct) {
+      return
+    }
+
+    setSelectedProduct(matchedProduct)
+    setIsViewOpen(true)
+  }, [products, searchParams])
+
   // Dialog states
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [isAddOpen, setIsAddOpen] = useState(false)
@@ -121,7 +208,6 @@ export default function ProductsPage() {
   const [newCreationType, setNewCreationType] = useState<'base' | 'variant'>('base')
   const [newBaseProductId, setNewBaseProductId] = useState('')
   const [newVariantName, setNewVariantName] = useState('')
-  const [newVariantSku, setNewVariantSku] = useState('')
   const [newVariantPriceAdjustment, setNewVariantPriceAdjustment] = useState('')
   
   // Edit form state
@@ -135,11 +221,41 @@ export default function ProductsPage() {
   const [selectedVariant, setSelectedVariant] = useState<Product['variants'][number] | null>(null)
   const [selectedVariantProduct, setSelectedVariantProduct] = useState<Product | null>(null)
   const [editVariantName, setEditVariantName] = useState('')
-  const [editVariantSku, setEditVariantSku] = useState('')
   const [editVariantPriceAdjustment, setEditVariantPriceAdjustment] = useState('')
+  const [expandedProducts, setExpandedProducts] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    if (!selectedProduct || isEditOpen) {
+      return
+    }
+
+    const refreshedProduct = products.find((product) => product.id === selectedProduct.id)
+    if (!refreshedProduct) {
+      return
+    }
+
+    setSelectedProduct(refreshedProduct)
+  }, [isEditOpen, products, selectedProduct])
+
+  useEffect(() => {
+    if (!selectedVariantProduct || !selectedVariant || isVariantEditOpen) {
+      return
+    }
+
+    const refreshedProduct = products.find((product) => product.id === selectedVariantProduct.id)
+    if (!refreshedProduct) {
+      return
+    }
+
+    const refreshedVariant = refreshedProduct.variants.find((variant) => variant.id === selectedVariant.id)
+    if (!refreshedVariant) {
+      return
+    }
+
+    setSelectedVariantProduct(refreshedProduct)
+    setSelectedVariant(refreshedVariant)
+  }, [isVariantEditOpen, products, selectedVariant, selectedVariantProduct])
   
-  // Show stock columns only for admin and stockman roles
-  const showStockColumns = user?.role === 'admin' || user?.role === 'stockman'
   const isAdmin = user?.role === 'admin'
 
   const resetAddForm = () => {
@@ -154,7 +270,6 @@ export default function ProductsPage() {
     setNewCreationType('base')
     setNewBaseProductId('')
     setNewVariantName('')
-    setNewVariantSku('')
     setNewVariantPriceAdjustment('')
   }
 
@@ -182,8 +297,8 @@ export default function ProductsPage() {
         return
       }
     } else {
-      if (!newSku.trim() || !newName.trim() || !newCategory) {
-        toast.error('SKU, Name, and Category are required')
+      if (!newName.trim() || !newCategory) {
+        toast.error('Name and Category are required')
         return
       }
       if (!newCostPrice || !newWholesalePrice || !newRetailPrice) {
@@ -197,7 +312,6 @@ export default function ProductsPage() {
         method: 'POST',
         body: {
           creationType: newCreationType,
-          sku: newCreationType === 'base' ? newSku.trim().toUpperCase() : undefined,
           name: newCreationType === 'base' ? newName.trim() : undefined,
           description: newCreationType === 'base' ? (newDescription.trim() || undefined) : undefined,
           categoryId: newCreationType === 'base' ? newCategory : undefined,
@@ -207,7 +321,6 @@ export default function ProductsPage() {
           isActive: newCreationType === 'base' ? newIsActive : undefined,
           baseProductId: newCreationType === 'variant' ? newBaseProductId : undefined,
           variantName: newCreationType === 'variant' ? newVariantName.trim() : undefined,
-          variantSku: newCreationType === 'variant' ? (newVariantSku.trim().toUpperCase() || undefined) : undefined,
           variantPriceAdjustment: newCreationType === 'variant' ? (parseFloat(newVariantPriceAdjustment) || 0) : undefined,
         },
       })
@@ -222,15 +335,17 @@ export default function ProductsPage() {
     }
   }
 
-  const handleRepairVariantInventory = async () => {
+  const handleSyncProducts = async () => {
     try {
-      setIsRepairingVariantInventory(true)
+      setIsSyncingProducts(true)
 
       const result = await apiFetch<{
         success: boolean
         message: string
         missingCount: number
         createdCount: number
+        createdProductsCount: number
+        createdVariantsCount: number
       }>('/api/products/backfill_variant_inventory.php', {
         method: 'POST',
       })
@@ -239,20 +354,29 @@ export default function ProductsPage() {
 
       toast.success(
         result.createdCount > 0
-          ? `Repaired ${result.createdCount} missing variant inventory row(s)`
+          ? `Products updated. Added ${result.createdCount} missing inventory record(s) for ${result.createdProductsCount} product(s) and ${result.createdVariantsCount} variant(s).`
           : result.message,
       )
     } catch (error) {
-      const message = error instanceof Error ? error.message.replace('API request failed: ', '') : 'Failed to repair variant inventory'
+      const message = error instanceof Error ? error.message.replace('API request failed: ', '') : 'Failed to sync products'
       toast.error(message)
     } finally {
-      setIsRepairingVariantInventory(false)
+      setIsSyncingProducts(false)
     }
   }
 
   const handleViewProduct = (product: Product) => {
     setSelectedProduct(product)
     setIsViewOpen(true)
+  }
+
+  const closeViewProduct = () => {
+    setIsViewOpen(false)
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete('productId')
+    params.delete('view')
+    const nextQuery = params.toString()
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname)
   }
 
   const handleEditProduct = (product: Product) => {
@@ -271,7 +395,6 @@ export default function ProductsPage() {
     setSelectedVariantProduct(product)
     setSelectedVariant(variant)
     setEditVariantName(variant.name)
-    setEditVariantSku(variant.sku || '')
     setEditVariantPriceAdjustment(variant.priceAdjustment.toString())
     setIsVariantViewOpen(true)
   }
@@ -323,7 +446,6 @@ export default function ProductsPage() {
         body: {
           id: selectedVariant.id,
           name: editVariantName.trim(),
-          sku: editVariantSku.trim() || undefined,
           priceAdjustment: parseFloat(editVariantPriceAdjustment) || 0,
         },
       })
@@ -372,14 +494,40 @@ export default function ProductsPage() {
 
   const filteredProducts = products.filter(product => {
     const matchesSearch = product.name.toLowerCase().includes(search.toLowerCase()) ||
-      product.sku.toLowerCase().includes(search.toLowerCase())
+      product.sku.toLowerCase().includes(search.toLowerCase()) ||
+      product.variants.some((variant) => variant.name.toLowerCase().includes(search.toLowerCase()))
     const matchesCategory = categoryFilter === 'all' || product.categoryId === categoryFilter
     return matchesSearch && matchesCategory
   })
 
+  const toggleProductVariants = (productId: string) => {
+    setExpandedProducts((current) => ({
+      ...current,
+      [productId]: !current[productId],
+    }))
+  }
+
+  const getCategoryName = (categoryId: string) => {
+    return categories.find((category) => category.id === categoryId)?.name ?? '-'
+  }
+
   const baseProductOptions = products
     .filter(product => product.id !== selectedProduct?.id)
     .sort((a, b) => a.name.localeCompare(b.name))
+
+  useEffect(() => {
+    if (newCreationType !== 'base') {
+      setNewSku('')
+      return
+    }
+
+    if (!newCategory) {
+      setNewSku('')
+      return
+    }
+
+    setNewSku(generateCategorySku(newCategory, categories, products))
+  }, [categories, newCategory, newCreationType, products])
 
   const selectedVariantInventory = selectedVariant && selectedVariantProduct
     ? inventoryLevels.find(
@@ -391,6 +539,12 @@ export default function ProductsPage() {
         (inv) => inv.productId === selectedProduct.id && !inv.variantId,
       )
     : undefined
+  const newVariantSkuPreview = newBaseProductId
+    ? generateVariantSkuPreview(newBaseProductId, newVariantName, products)
+    : ''
+  const editVariantSkuPreview = selectedVariantProduct && selectedVariant
+    ? generateVariantSkuPreview(selectedVariantProduct.id, editVariantName, products, selectedVariant.id)
+    : ''
 
   const pagination = usePagination(filteredProducts, { itemsPerPage: 10 })
 
@@ -424,14 +578,15 @@ export default function ProductsPage() {
                 ))}
               </SelectContent>
             </Select>
-            {isAdmin && (
+            {isAdmin && !isEditOpen && !isVariantEditOpen && (
               <>
                 <Button
                   variant="outline"
-                  onClick={handleRepairVariantInventory}
-                  disabled={isRepairingVariantInventory}
+                  onClick={handleSyncProducts}
+                  disabled={isSyncingProducts}
                 >
-                  {isRepairingVariantInventory ? 'Repairing...' : 'Repair Variant Inventory'}
+                  <RefreshCw className={`mr-2 size-4 ${isSyncingProducts ? 'animate-spin' : ''}`} />
+                  {isSyncingProducts ? 'Syncing Products...' : 'Sync Products'}
                 </Button>
                 <Button onClick={() => setIsAddOpen(true)}>
                   <Plus className="size-4 mr-2" />
@@ -446,130 +601,166 @@ export default function ProductsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>SKU</TableHead>
-                <TableHead>Product Name</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Variants</TableHead>
+                <TableHead>Product</TableHead>
                 <TableHead className="text-right">Cost</TableHead>
                 <TableHead className="text-right">Wholesale Price</TableHead>
                 <TableHead className="text-right">Retail Price</TableHead>
-                {showStockColumns && (
-                  <>
-                    <TableHead className="text-right">Wholesale Stock</TableHead>
-                    <TableHead className="text-right">Retail Stock</TableHead>
-                    <TableHead className="text-right">Shelf Stock</TableHead>
-                  </>
-                )}
                 <TableHead>Availability</TableHead>
                 <TableHead className="w-10"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {pagination.paginatedItems.map(product => {
-                const inventory = inventoryLevels.find(inv => inv.productId === product.id)
-
                 return (
-                  <TableRow key={product.id}>
-                    <TableCell className="font-mono text-sm">{product.sku}</TableCell>
-                    <TableCell>
-                      <div className="font-medium">{product.name}</div>
-                      {product.description && (
-                        <div className="text-xs text-muted-foreground truncate max-w-[200px]">
-                          {product.description}
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell>{categories.find(cat => cat.id === product.categoryId)?.name || '-'}</TableCell>
-                    <TableCell>
-                      {product.variants.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {product.variants.map(v => (
+                  <Fragment key={product.id}>
+                    <TableRow>
+                      <TableCell className="font-mono text-sm">{product.sku}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          {product.variants.length > 0 ? (
                             <Button
-                              key={v.id}
                               type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-6 px-2 text-xs"
-                              onClick={() => handleViewVariant(product, v)}
+                              variant="ghost"
+                              size="icon"
+                              className="size-7"
+                              onClick={() => toggleProductVariants(product.id)}
+                              title={expandedProducts[product.id] ? 'Hide variants' : 'Show variants'}
                             >
-                              {v.name}
+                              {expandedProducts[product.id] ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
                             </Button>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground text-sm">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatPeso(product.costPrice)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatPeso(product.wholesalePrice)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums font-medium">
-                      {formatPeso(product.retailPrice)}
-                    </TableCell>
-                    {showStockColumns && (
-                      <>
-                        <TableCell className="text-right tabular-nums">
-                          {inventory?.wholesaleQty ?? 0}
-                          <span className="text-xs text-muted-foreground ml-1">
-                            {inventory?.wholesaleUnit ?? ''}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {inventory?.retailQty ?? 0}
-                          <span className="text-xs text-muted-foreground ml-1">
-                            {inventory?.retailUnit ?? ''}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {inventory?.shelfQty ?? 0}
-                          <span className="text-xs text-muted-foreground ml-1">
-                            {inventory?.shelfUnit ?? ''}
-                          </span>
-                        </TableCell>
-                      </>
-                    )}
-                    <TableCell>
-                      {product.isActive ? (
-                        <Badge className="text-xs bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20">
-                          Active
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary" className="text-xs">Inactive</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="size-8">
-                            <MoreHorizontal className="size-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleViewProduct(product)}>
-                            <Eye className="size-4 mr-2" />
-                            View Details
-                          </DropdownMenuItem>
-                          {isAdmin && (
-                            <>
-                              <DropdownMenuItem onClick={() => handleEditProduct(product)}>
-                                <Edit className="size-4 mr-2" />
-                                Edit Product
-                              </DropdownMenuItem>
-                              <DropdownMenuItem 
-                                className="text-destructive"
-                                onClick={() => handleDeleteProduct(product)}
-                              >
-                                <Trash2 className="size-4 mr-2" />
-                                Delete
-                              </DropdownMenuItem>
-                            </>
+                          ) : (
+                            <span className="flex items-center">
+                              <Package className="size-4 text-muted-foreground" />
+                            </span>
                           )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
+                          <div>
+                            <div className="font-medium">{product.name}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {getCategoryName(product.categoryId)}
+                            </div>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatPeso(product.costPrice)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatPeso(product.wholesalePrice)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums font-medium">
+                        {formatPeso(product.retailPrice)}
+                      </TableCell>
+                      <TableCell>
+                        {product.isActive ? (
+                          <Badge className="text-xs bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20">
+                            Active
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-xs">Inactive</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="size-8">
+                              <MoreHorizontal className="size-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleViewProduct(product)}>
+                              <Eye className="size-4 mr-2" />
+                              View Details
+                            </DropdownMenuItem>
+                            {isAdmin && (
+                              <>
+                                <DropdownMenuItem onClick={() => handleEditProduct(product)}>
+                                  <Edit className="size-4 mr-2" />
+                                  Edit Product
+                                </DropdownMenuItem>
+                                <DropdownMenuItem 
+                                  className="text-destructive"
+                                  onClick={() => handleDeleteProduct(product)}
+                                >
+                                  <Trash2 className="size-4 mr-2" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                    {expandedProducts[product.id] && product.variants.map((variant) => {
+                      const variantWholesalePrice = product.wholesalePrice + variant.priceAdjustment
+                      const variantRetailPrice = product.retailPrice + variant.priceAdjustment
+
+                      return (
+                        <TableRow key={variant.id} className="bg-muted/20">
+                          <TableCell className="font-mono text-sm text-muted-foreground">
+                            {variant.sku || '-'}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <span className="ml-9 flex items-center">
+                                <Package className="size-4 text-muted-foreground opacity-60" />
+                              </span>
+                              <div>
+                                <div className="text-sm font-medium">{variant.name}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  Variant of {product.name}
+                                </div>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatPeso(product.costPrice)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatPeso(variantWholesalePrice)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums font-medium">
+                            {formatPeso(variantRetailPrice)}
+                          </TableCell>
+                          <TableCell>
+                            {product.isActive ? (
+                              <Badge className="text-xs bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20">
+                                Active
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="text-xs">Inactive</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="size-8">
+                                  <MoreHorizontal className="size-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => handleViewVariant(product, variant)}>
+                                  <Eye className="size-4 mr-2" />
+                                  View Variant
+                                </DropdownMenuItem>
+                                {isAdmin && (
+                                  <DropdownMenuItem onClick={() => {
+                                    setSelectedVariantProduct(product)
+                                    setSelectedVariant(variant)
+                                    setEditVariantName(variant.name)
+                                    setEditVariantPriceAdjustment(variant.priceAdjustment.toString())
+                                    setIsVariantEditOpen(true)
+                                  }}>
+                                    <Edit className="size-4 mr-2" />
+                                    Edit Variant
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </Fragment>
                 )
               })}
             </TableBody>
@@ -626,13 +817,16 @@ export default function ProductsPage() {
               <>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="newSku">SKU *</Label>
+                    <Label htmlFor="newSku">SKU</Label>
                     <Input
                       id="newSku"
-                      placeholder="e.g., PROD-001"
                       value={newSku}
-                      onChange={(e) => setNewSku(e.target.value)}
+                      readOnly
+                      disabled={!newCategory}
                     />
+                    <p className="text-xs text-muted-foreground">
+                      {newCategory ? 'Generated automatically from the selected category.' : 'Select a category to generate the SKU.'}
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <Label>Category *</Label>
@@ -740,10 +934,15 @@ export default function ProductsPage() {
                     <Label htmlFor="newVariantSku">Variant SKU</Label>
                     <Input
                       id="newVariantSku"
-                      placeholder="Optional SKU"
-                      value={newVariantSku}
-                      onChange={(e) => setNewVariantSku(e.target.value)}
+                      value={newVariantSkuPreview}
+                      readOnly
+                      disabled={!newBaseProductId || !newVariantName.trim()}
                     />
+                    <p className="text-xs text-muted-foreground">
+                      {newBaseProductId && newVariantName.trim()
+                        ? 'Generated automatically from the base product SKU and variant name.'
+                        : 'Select a base product and enter a variant name to generate the SKU.'}
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="newVariantPriceAdjustment">Price Adjustment</Label>
@@ -777,7 +976,13 @@ export default function ProductsPage() {
       </Dialog>
 
       {/* View Product Dialog */}
-      <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
+      <Dialog open={isViewOpen} onOpenChange={(open) => {
+        if (!open) {
+          closeViewProduct()
+          return
+        }
+        setIsViewOpen(true)
+      }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Product Details</DialogTitle>
@@ -895,7 +1100,7 @@ export default function ProductsPage() {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsViewOpen(false)}>
+            <Button variant="outline" onClick={closeViewProduct}>
               Close
             </Button>
             {selectedProduct && (
@@ -908,7 +1113,7 @@ export default function ProductsPage() {
                       productName: selectedProduct.name,
                     },
                   }}
-                  onClick={() => setIsViewOpen(false)}
+                  onClick={closeViewProduct}
                 >
                   View Movements
                 </Link>
@@ -1170,9 +1375,13 @@ export default function ProductsPage() {
                 <Label htmlFor="editVariantSku">Variant SKU</Label>
                 <Input
                   id="editVariantSku"
-                  value={editVariantSku}
-                  onChange={(e) => setEditVariantSku(e.target.value)}
+                  value={editVariantSkuPreview}
+                  readOnly
+                  disabled={!editVariantName.trim()}
                 />
+                <p className="text-xs text-muted-foreground">
+                  Generated automatically from the base product SKU and variant name.
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="editVariantPriceAdjustment">Price Adjustment</Label>
