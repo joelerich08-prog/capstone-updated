@@ -80,6 +80,7 @@ export function StockAdjustmentPanel() {
   const hasBaseInventoryRow = selectedProduct
     ? inventoryLevels.some((level) => level.productId === selectedProduct && !level.variantId)
     : false
+  const isVariantSelectionValid = !requiresVariantSelection || hasBaseInventoryRow || !!selectedVariant
   const currentStock = selectedProduct ? getStock(selectedProduct, tier, selectedVariant || undefined) : 0
 
   useEffect(() => {
@@ -131,7 +132,7 @@ export function StockAdjustmentPanel() {
   }, [])
 
   const handleSubmitClick = () => {
-    if (requiresVariantSelection && !selectedVariant) {
+    if (!isVariantSelectionValid) {
       toast.error('Please select a variant for this product')
       return
     }
@@ -367,7 +368,7 @@ export function StockAdjustmentPanel() {
             <Button
               className="w-full"
               onClick={handleSubmitClick}
-              disabled={!selectedProduct || quantity <= 0 || !notes.trim() || (requiresVariantSelection && !selectedVariant)}
+              disabled={!selectedProduct || quantity <= 0 || !notes.trim() || !isVariantSelectionValid}
               variant={adjustmentType === 'subtract' ? 'destructive' : 'default'}
             >
               <Check className="mr-2 size-4" />

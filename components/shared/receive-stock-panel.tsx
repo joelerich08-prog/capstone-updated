@@ -50,6 +50,7 @@ interface ReceiveHistory {
   supplier: string
   items: number
   totalCost: number
+  notes?: string
   status: 'completed' | 'pending'
 }
 
@@ -97,7 +98,7 @@ export function ReceiveStockPanel() {
   const [items, setItems] = useState<ReceiveItem[]>([])
   const [invoiceNumber, setInvoiceNumber] = useState<string>(`INV-${Date.now()}`)
   const [batchNumber, setBatchNumber] = useState<string>(generateBatchNumber())
-  const [expirationDate, setExpirationDate] = useState<string>(format(addDays(new Date(), 180), 'yyyy-MM-dd'))
+  const [expirationDate, setExpirationDate] = useState<string>('')
   const [manufacturingDate, setManufacturingDate] = useState<string>('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const selectedProductRecord = products.find((p) => p.id === selectedProduct)
@@ -106,6 +107,7 @@ export function ReceiveStockPanel() {
   const hasBaseInventoryRow = selectedProduct
     ? inventoryLevels.some((level) => level.productId === selectedProduct && !level.variantId)
     : false
+  const isVariantSelectionValid = !requiresVariantSelection || hasBaseInventoryRow || !!selectedVariant
 
   const handleAddItem = () => {
     if (!selectedSupplier) {
@@ -126,7 +128,7 @@ export function ReceiveStockPanel() {
     const product = selectedProductRecord
     if (!product) return
 
-    if (requiresVariantSelection && !selectedVariant) {
+    if (!isVariantSelectionValid) {
       toast.error('Please select a variant for this product')
       return
     }
@@ -223,6 +225,7 @@ export function ReceiveStockPanel() {
       return
     }
     const trimmedInvoiceNumber = invoiceNumber.trim()
+    const trimmedNotes = notes.trim()
 
     if (!trimmedInvoiceNumber) {
       toast.error('Invoice number is required')
@@ -257,7 +260,7 @@ export function ReceiveStockPanel() {
     setIsSubmitting(true)
     let result: Awaited<ReturnType<typeof receiveStock>>
     try {
-      result = await receiveStock(receiveItems, supplier.id, supplier.name, trimmedInvoiceNumber, userName)
+      result = await receiveStock(receiveItems, supplier.id, supplier.name, trimmedInvoiceNumber, trimmedNotes, userName)
     } finally {
       setIsSubmitting(false)
     }
@@ -269,6 +272,7 @@ export function ReceiveStockPanel() {
         supplier: supplier?.name || 'Unknown Supplier',
         items: items.length,
         totalCost: totalCostValue,
+        notes: trimmedNotes || undefined,
         status: 'completed',
       }
 
@@ -284,7 +288,7 @@ export function ReceiveStockPanel() {
       setInvoiceNumber(`INV-${Date.now()}`)
       setBatchNumber(generateBatchNumber())
       setManufacturingDate('')
-      setExpirationDate(format(addDays(new Date(), 180), 'yyyy-MM-dd'))
+      setExpirationDate('')
     } else {
       toast.error(result.error || 'Failed to receive stock')
     }
@@ -316,7 +320,7 @@ export function ReceiveStockPanel() {
               </Field>
                   <Field>
                     <FieldLabel>Invoice Number</FieldLabel>
-                    <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder="INV-2024-001" />
+                    <Input value={invoiceNumber} readOnly disabled className="cursor-not-allowed" />
                   </Field>
             </div>
 
@@ -387,7 +391,7 @@ export function ReceiveStockPanel() {
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field>
                     <FieldLabel>Batch/Lot Number</FieldLabel>
-                    <Input value={batchNumber} onChange={(e) => setBatchNumber(e.target.value)} placeholder="LOT-2024-001" />
+                    <Input value={batchNumber} readOnly disabled className="cursor-not-allowed" />
                   </Field>
                   <Field>
                     <FieldLabel>Expiry *</FieldLabel>
@@ -407,7 +411,7 @@ export function ReceiveStockPanel() {
               onClick={handleAddItem}
               variant="outline"
               className="w-full"
-              disabled={!selectedProduct || quantity <= 0 || (requiresVariantSelection && !selectedVariant)}
+              disabled={!selectedProduct || quantity <= 0 || !isVariantSelectionValid}
             >
               <Plus className="mr-2 size-4" />
               Add to List
@@ -501,6 +505,7 @@ export function ReceiveStockPanel() {
                 <div className="space-y-1 text-sm text-muted-foreground">
                   <p>{receipt.items} items received</p>
                   <p className="font-medium text-foreground">{formatCurrency(receipt.totalCost)}</p>
+                  {receipt.notes && <p className="text-xs">{receipt.notes}</p>}
                   <p className="text-xs">{format(receipt.date, 'MMM d, yyyy h:mm a')}</p>
                 </div>
               </div>

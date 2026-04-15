@@ -49,13 +49,14 @@ export function StockBreakdownPanel() {
   const hasBaseInventoryRow = selectedProduct
     ? inventoryLevels.some((level) => level.productId === selectedProduct && !level.variantId)
     : false
+  const isVariantSelectionValid = !requiresVariantSelection || hasBaseInventoryRow || !!selectedVariant
   const breakableProducts = products.filter((prod) => {
     const matchingInventory = inventoryLevels.filter((level) => level.productId === prod.id)
     return matchingInventory.some((level) => level.wholesaleQty > 0 && level.packsPerBox > 0)
   })
 
   const handleBreakdownClick = () => {
-    if (requiresVariantSelection && !selectedVariant) {
+    if (!isVariantSelectionValid) {
       toast.error('Please select a variant for this product')
       return
     }
@@ -207,7 +208,7 @@ export function StockBreakdownPanel() {
             <Button
               className="w-full"
               onClick={handleBreakdownClick}
-              disabled={!selectedProduct || quantity <= 0 || (requiresVariantSelection && !selectedVariant)}
+              disabled={!selectedProduct || quantity <= 0 || !isVariantSelectionValid}
             >
               <Package className="mr-2 size-4" />
               Confirm Breakdown

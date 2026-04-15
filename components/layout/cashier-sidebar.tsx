@@ -92,7 +92,7 @@ export function CashierSidebar() {
             M
           </div>
           <div className="flex flex-col">
-            <span className="text-sm font-semibold">My Store</span>
+            <span className="text-sm font-semibold">Kakai's Store</span>
             <span className="text-xs text-muted-foreground">Cashier Portal</span>
           </div>
         </Link>

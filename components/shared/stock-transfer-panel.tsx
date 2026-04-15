@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -24,6 +24,7 @@ import {
 import { FieldGroup, Field, FieldLabel } from '@/components/ui/field'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
+import { useBatches } from '@/contexts/batch-context'
 import { useProducts } from '@/contexts/products-context'
 import { useInventory } from '@/contexts/inventory-context'
 import { useAuth } from '@/contexts/auth-context'
@@ -34,6 +35,7 @@ const BASE_PRODUCT_VALUE = '__base__'
 
 export function StockTransferPanel() {
   const { inventoryLevels, getInventory, transferStock } = useInventory()
+  const { batches } = useBatches()
   const { user } = useAuth()
   const { products } = useProducts()
   const [selectedProduct, setSelectedProduct] = useState<string>('')
@@ -50,9 +52,55 @@ export function StockTransferPanel() {
   const hasBaseInventoryRow = selectedProduct
     ? inventoryLevels.some((level) => level.productId === selectedProduct && !level.variantId)
     : false
+  const isVariantSelectionValid = !requiresVariantSelection || hasBaseInventoryRow || !!selectedVariant
+  const normalizedSelectedVariant = selectedVariant || undefined
+
+  const batchTotals = useMemo(() => {
+    if (!selectedProduct) {
+      return null
+    }
+
+    const matchingBatches = batches.filter((batch) => {
+      if (batch.productId !== selectedProduct || batch.status === 'disposed') {
+        return false
+      }
+
+      return (batch.variantId || undefined) === normalizedSelectedVariant
+    })
+
+    return matchingBatches.reduce(
+      (totals, batch) => ({
+        retail: totals.retail + batch.retailQty,
+        shelf: totals.shelf + batch.shelfQty,
+      }),
+      { retail: 0, shelf: 0 },
+    )
+  }, [batches, normalizedSelectedVariant, selectedProduct])
+
+  const transferDiagnostics = useMemo(() => {
+    if (!inventory || !batchTotals) {
+      return []
+    }
+
+    const diagnostics: string[] = []
+
+    if (inventory.retailQty !== batchTotals.retail) {
+      diagnostics.push(
+        `Retail totals are out of sync: inventory shows ${inventory.retailQty}, batches show ${batchTotals.retail}.`,
+      )
+    }
+
+    if (inventory.shelfQty !== batchTotals.shelf) {
+      diagnostics.push(
+        `Shelf totals are out of sync: inventory shows ${inventory.shelfQty}, batches show ${batchTotals.shelf}.`,
+      )
+    }
+
+    return diagnostics
+  }, [batchTotals, inventory])
 
   const handleTransferClick = () => {
-    if (requiresVariantSelection && !selectedVariant) {
+    if (!isVariantSelectionValid) {
       toast.error('Please select a variant for this product')
       return
     }
@@ -64,6 +112,11 @@ export function StockTransferPanel() {
 
     if (quantity > inventory.retailQty) {
       toast.error('Not enough retail stock to transfer')
+      return
+    }
+
+    if (transferDiagnostics.length > 0) {
+      toast.error('Inventory and batch totals are out of sync. Review the warning before transferring.')
       return
     }
 
@@ -82,7 +135,7 @@ export function StockTransferPanel() {
       setSelectedVariant('')
       setQuantity(1)
     } else {
-      toast.error(result.error || 'Transfer failed')
+      toast.error(result.error || 'Transfer failed. Inventory and batch totals may be out of sync.')
     }
     setIsConfirmOpen(false)
   }
@@ -180,6 +233,20 @@ export function StockTransferPanel() {
           {inventory && product && (
             <>
               <Separator />
+              {transferDiagnostics.length > 0 && (
+                <div className="rounded-lg border border-orange-500/30 bg-orange-500/10 p-4 text-sm">
+                  <div className="mb-2 flex items-center gap-2 font-medium text-orange-700 dark:text-orange-400">
+                    <AlertTriangle className="size-4" />
+                    Batch Sync Warning
+                  </div>
+                  <div className="space-y-1 text-muted-foreground">
+                    {transferDiagnostics.map((diagnostic) => (
+                      <p key={diagnostic}>{diagnostic}</p>
+                    ))}
+                    <p>Transfers are blocked until inventory totals and batch totals match for this product.</p>
+                  </div>
+                </div>
+              )}
               <div className="rounded-lg bg-muted/50 p-4">
                 <p className="mb-3 text-sm text-muted-foreground">Transfer Preview</p>
                 <div className="flex items-center justify-center gap-6">
@@ -215,7 +282,7 @@ export function StockTransferPanel() {
           <Button
             className="w-full"
             onClick={handleTransferClick}
-            disabled={!selectedProduct || quantity <= 0 || (requiresVariantSelection && !selectedVariant)}
+            disabled={!selectedProduct || quantity <= 0 || !isVariantSelectionValid || transferDiagnostics.length > 0}
           >
             <ArrowRight className="mr-2 size-4" />
             Confirm Transfer

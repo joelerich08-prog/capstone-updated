@@ -44,6 +44,16 @@ type StockMovementApiRow = Omit<StockMovement, 'createdAt'> & {
   createdAt: string
 }
 
+type ParsedAllocationNotes = {
+  referenceType: string
+  referenceId: string
+  allocations: Array<{
+    batchId: string
+    batchNumber: string
+    quantity: number
+  }>
+}
+
 const movementTypeConfig: Record<MovementType, { label: string; icon: React.ReactNode; color: string }> = {
   receive: { label: 'Received', icon: <ArrowDownToLine className="size-4" />, color: 'bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/30' },
   breakdown: { label: 'Breakdown', icon: <Scissors className="size-4" />, color: 'bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/30' },
@@ -65,6 +75,37 @@ const slugifyFilenamePart = (value: string) =>
     .trim()
     .replace(/[^a-zA-Z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
+
+const parseAllocationNotes = (notes?: string): ParsedAllocationNotes | null => {
+  if (!notes) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(notes) as ParsedAllocationNotes
+    if (!parsed || !Array.isArray(parsed.allocations)) {
+      return null
+    }
+
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+const formatMovementNotes = (movement: StockMovement) => {
+  const parsed = parseAllocationNotes(movement.notes)
+  if (!parsed || parsed.allocations.length === 0) {
+    return movement.notes ?? ''
+  }
+
+  const allocationSummary = parsed.allocations
+    .map((allocation) => `${allocation.batchNumber}: ${allocation.quantity}`)
+    .join(', ')
+
+  const label = movement.movementType === 'return' ? 'Restored batches' : 'Batches'
+  return `${label}: ${allocationSummary}`
+}
 
 export function StockMovementHistory() {
   const pathname = usePathname()
@@ -118,7 +159,7 @@ export function StockMovementHistory() {
 
   const filteredMovements = useMemo(() => {
     return movements.filter((movement) => {
-      const searchTarget = `${movement.productName} ${movement.variantName ?? ''} ${movement.performedBy}`.toLowerCase()
+      const searchTarget = `${movement.productName} ${movement.variantName ?? ''} ${movement.reason ?? ''} ${movement.notes ?? ''} ${movement.performedBy}`.toLowerCase()
       const matchesSearch = searchTarget.includes(searchQuery.toLowerCase())
       const matchesType = typeFilter === 'all' || movement.movementType === typeFilter
       const matchesProduct = !productIdFilter || movement.productId === productIdFilter
@@ -142,16 +183,18 @@ export function StockMovementHistory() {
   }
 
   const handleExport = () => {
-    const header = 'ID,Product,Movement Type,From Tier,To Tier,Quantity,Reason,Performed By,Date'
+    const header = 'ID,Product,Movement Type,From Tier,To Tier,Quantity,Reason,Notes,Performed By,Date'
 
     const rows = filteredMovements
       .map((movement) => {
         const fromTier = movement.fromTier ? tierLabels[movement.fromTier] : ''
         const toTier = movement.toTier ? tierLabels[movement.toTier] : ''
         const reason = movement.reason ? `"${movement.reason.replace(/"/g, '""')}"` : ''
+        const notesText = formatMovementNotes(movement)
+        const notes = notesText ? `"${notesText.replace(/"/g, '""')}"` : ''
         const productName = `"${movement.productName.replace(/"/g, '""')}"`
 
-        return `${movement.id},${productName},${getMovementConfig(movement.movementType).label},${fromTier},${toTier},${movement.quantity},${reason},${movement.performedBy},${format(movement.createdAt, 'yyyy-MM-dd HH:mm')}`
+        return `${movement.id},${productName},${getMovementConfig(movement.movementType).label},${fromTier},${toTier},${movement.quantity},${reason},${notes},${movement.performedBy},${format(movement.createdAt, 'yyyy-MM-dd HH:mm')}`
       })
       .join('\n')
 
@@ -340,6 +383,9 @@ export function StockMovementHistory() {
                           )}
                           {movement.reason && (
                             <div className="text-xs text-muted-foreground">{movement.reason}</div>
+                          )}
+                          {movement.notes && (
+                            <div className="text-xs text-muted-foreground">{formatMovementNotes(movement)}</div>
                           )}
                         </TableCell>
                         <TableCell>

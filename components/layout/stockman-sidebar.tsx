@@ -134,7 +134,7 @@ export function StockmanSidebar() {
             M
           </div>
           <div className="flex flex-col">
-            <span className="text-sm font-semibold">My Store</span>
+            <span className="text-sm font-semibold">Kakai's Store</span>
             <span className="text-xs text-muted-foreground">Stockman Portal</span>
           </div>
         </Link>
