@@ -28,7 +28,7 @@ INSERT INTO store_settings (
 VALUES
     (
         'cfg-store-001',
-        'My Store Grocery and Convenience',
+        'Kakai''s Store Grocery and Convenience',
         '123 National Highway, Barangay San Antonio',
         'Santa Rosa',
         '4026',

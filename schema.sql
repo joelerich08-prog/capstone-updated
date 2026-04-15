@@ -229,6 +229,7 @@ CREATE TABLE stock_movements (
     toTier ENUM('wholesale', 'retail', 'shelf'),
     quantity INT NOT NULL,
     reason TEXT,
+    notes TEXT,
     performedBy VARCHAR(36) NOT NULL,
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (productId) REFERENCES products(id),

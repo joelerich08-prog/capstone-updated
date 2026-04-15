@@ -8,8 +8,8 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: {
-    default: 'My Store - Business Management System',
-    template: '%s | My Store',
+    default: "Kakai's Store - Business Management System",
+    template: "%s | Kakai's Store",
   },
   description: 'Complete business management system with POS, inventory tracking, and analytics',
   generator: 'v0.app',

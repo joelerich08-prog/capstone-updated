@@ -366,7 +366,7 @@ INSERT INTO store_settings (
     updatedAt
 )
 VALUES
-    ('cfg-store-001', 'My Store Grocery and Convenience', '123 National Highway, Barangay San Antonio', 'Santa Rosa', '4026', '+63 49 555 0123', 'hello@mystore.local', 'TAX-2026-001', 'PHP', 'Asia/Manila', '07:00', '21:00', '2026-04-01 08:00:00', '2026-04-15 09:00:00')
+    ('cfg-store-001', 'Kakai''s Store Grocery and Convenience', '123 National Highway, Barangay San Antonio', 'Santa Rosa', '4026', '+63 49 555 0123', 'hello@mystore.local', 'TAX-2026-001', 'PHP', 'Asia/Manila', '07:00', '21:00', '2026-04-01 08:00:00', '2026-04-15 09:00:00')
 ON DUPLICATE KEY UPDATE
     name = VALUES(name),
     address = VALUES(address),

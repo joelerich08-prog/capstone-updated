@@ -44,7 +44,7 @@ export default function StaffLoginPage() {
           <div>
             <h1 className="text-2xl font-bold">Staff Portal</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              My Store Management System
+              Kakai's Store Management System
             </p>
           </div>
         </div>
@@ -115,7 +115,7 @@ export default function StaffLoginPage() {
 
         {/* Footer */}
         <p className="text-center text-xs text-muted-foreground">
-          &copy; {new Date().getFullYear()} My Store. Authorized personnel only.
+          &copy; {new Date().getFullYear()} Kakai's Store. Authorized personnel only.
         </p>
       </div>
     </div>
