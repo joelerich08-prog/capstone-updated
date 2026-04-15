@@ -117,6 +117,7 @@ export interface StockMovement {
   toTier?: InventoryTier
   quantity: number
   reason?: string
+  notes?: string
   performedBy: string
   createdAt: Date
 }

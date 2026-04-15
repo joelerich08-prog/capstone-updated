@@ -87,6 +87,7 @@ interface InventoryContextType {
     supplierId: string,
     supplier: string,
     invoiceNumber: string,
+    notes: string,
     userName: string
   ) => Promise<{ success: boolean; error?: string }>
   
@@ -334,6 +335,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     supplierId: string,
     supplier: string,
     invoiceNumber: string,
+    notes: string,
     userName: string
   ) => {
     try {
@@ -349,6 +351,8 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         return { success: false, error: 'Invoice number is required' }
       }
 
+      const trimmedNotes = notes.trim()
+
       await apiFetch('/api/inventory/receive_stock.php', {
         method: 'POST',
         body: {
@@ -356,6 +360,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
           supplierId,
           supplier,
           invoiceNumber,
+          notes: trimmedNotes,
         },
       })
       
@@ -368,7 +373,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       addActivityLog(
         'receiving',
         `Received ${totalItems} units across ${items.length} product(s)`,
-        `Supplier: ${supplier} | Invoice: ${invoiceNumber} | Items: ${itemsList}`,
+        `Supplier: ${supplier} | Invoice: ${invoiceNumber} | Items: ${itemsList}${trimmedNotes ? ` | Notes: ${trimmedNotes}` : ''}`,
         userName
       )
 
