@@ -28,7 +28,7 @@ $tier = trim($data['tier']);
 $quantityChange = (int)$data['quantityChange'];
 $reason = trim($data['reason']);
 $notes = isset($data['notes']) ? trim($data['notes']) : '';
-$variantId = isset($data['variantId']) ? trim($data['variantId']) : null;
+$variantId = normalizeInventoryVariantId($data['variantId'] ?? null);
 
 // Validate tier
 if (!in_array($tier, ['wholesale', 'retail', 'shelf'])) {

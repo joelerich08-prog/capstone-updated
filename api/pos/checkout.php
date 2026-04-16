@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../middleware/cors.php';
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../includes/inventory.php';
+require_once __DIR__ . '/../includes/transaction-validation.php';
 
 session_start();
 
@@ -16,7 +17,15 @@ $cashierId = $_SESSION['user_id'];
 $data = json_decode(file_get_contents('php://input'), true);
 if (!$data || !isset($data['items']) || !isset($data['paymentType']) || !isset($data['subtotal']) || !isset($data['discount']) || !isset($data['total'])) {
     http_response_code(400);
-    echo json_encode(['error' => 'Invalid input']);
+    echo json_encode(['error' => 'Invalid input: missing required fields']);
+    exit;
+}
+
+// Validate transaction data
+$validationErrors = validateTransaction($data);
+if (!empty($validationErrors)) {
+    http_response_code(400);
+    echo json_encode(['error' => 'Validation failed', 'details' => $validationErrors]);
     exit;
 }
 
@@ -26,12 +35,6 @@ $subtotal = (float)$data['subtotal'];
 $discount = (float)$data['discount'];
 $total = (float)$data['total'];
 $invoiceNo = isset($data['invoiceNo']) ? trim($data['invoiceNo']) : '';
-
-if (!in_array($paymentType, ['cash', 'gcash', 'maya'], true) || $subtotal < 0 || $discount < 0 || $total < 0 || empty($items)) {
-    http_response_code(400);
-    echo json_encode(['error' => 'Invalid data']);
-    exit;
-}
 
 $pdo = Database::getInstance();
 

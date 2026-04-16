@@ -18,6 +18,21 @@ if ($origin && in_array($origin, $allowedOrigins, true)) {
     header('Vary: Origin');
 }
 
+// Enable session cookies for cross-site requests in local dev and supported environments.
+$secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] === '443');
+$sameSite = $secure ? 'None' : 'Lax'; // Use Lax for HTTP (local dev), None for HTTPS (production)
+ini_set('session.cookie_secure', $secure ? '1' : '0');
+ini_set('session.cookie_httponly', '1');
+ini_set('session.cookie_samesite', $sameSite);
+session_set_cookie_params([
+    'lifetime' => 0,
+    'path' => '/',
+    'domain' => '',
+    'secure' => $secure,
+    'httponly' => true,
+    'samesite' => $sameSite,
+]);
+
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
 header('Access-Control-Allow-Credentials: true');

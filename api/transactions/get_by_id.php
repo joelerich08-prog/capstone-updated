@@ -35,11 +35,13 @@ try {
                     'id', ti.id,
                     'productId', ti.productId,
                     'productName', ti.productName,
+                    'variantId', ti.variantId,
+                    'variantName', ti.variantName,
                     'quantity', ti.quantity,
                     'unitPrice', ti.unitPrice,
                     'discount', ti.discount,
                     'total', ti.total
-                )
+                ) SEPARATOR '|'
             ) as itemsJson
         FROM transactions t
         LEFT JOIN transaction_items ti ON t.id = ti.transactionId
@@ -57,8 +59,13 @@ try {
 
     $items = [];
     if ($row['itemsJson']) {
-        $itemsArray = json_decode('[' . $row['itemsJson'] . ']', true);
-        $items = $itemsArray ?: [];
+        $itemsJsonArray = explode('|', $row['itemsJson']);
+        foreach ($itemsJsonArray as $itemJson) {
+            $item = json_decode($itemJson, true);
+            if ($item) {
+                $items[] = $item;
+            }
+        }
     }
 
     echo json_encode([

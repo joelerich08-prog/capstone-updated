@@ -99,7 +99,7 @@ try {
     $totalItems = 0;
     foreach ($items as $item) {
         $productId = trim($item['productId']);
-        $variantId = isset($item['variantId']) ? trim($item['variantId']) : null;
+        $variantId = normalizeInventoryVariantId($item['variantId'] ?? null);
         $quantity = (int)$item['quantity'];
         $cost = (float)$item['cost'];
         $tier = isset($item['tier']) ? trim($item['tier']) : 'wholesale';

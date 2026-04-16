@@ -28,60 +28,62 @@ if ($dateStr && !$startDate && !$endDate) {
 $pdo = Database::getInstance();
 
 try {
+    $conditions = [];
+    $params = [];
+
     if ($startDate && $endDate) {
-        $stmt = $pdo->prepare("SELECT 
-            t.*, 
-            GROUP_CONCAT(
-                JSON_OBJECT(
-                    'id', ti.id,
-                    'productId', ti.productId,
-                    'productName', ti.productName,
-                    'variantId', ti.variantId,
-                    'variantName', ti.variantName,
-                    'quantity', ti.quantity,
-                    'unitPrice', ti.unitPrice,
-                    'discount', 0,
-                    'total', ti.subtotal,
-                    'subtotal', ti.subtotal
-                )
-            ) as itemsJson
-        FROM transactions t
-        LEFT JOIN transaction_items ti ON t.id = ti.transactionId
-        WHERE t.createdAt >= ? AND t.createdAt <= ?
-        GROUP BY t.id
-        ORDER BY t.createdAt DESC");
-        $stmt->execute([$startDate, $endDate]);
-    } else {
-        $stmt = $pdo->prepare("SELECT 
-            t.*, 
-            GROUP_CONCAT(
-                JSON_OBJECT(
-                    'id', ti.id,
-                    'productId', ti.productId,
-                    'productName', ti.productName,
-                    'variantId', ti.variantId,
-                    'variantName', ti.variantName,
-                    'quantity', ti.quantity,
-                    'unitPrice', ti.unitPrice,
-                    'discount', 0,
-                    'total', ti.subtotal,
-                    'subtotal', ti.subtotal
-                )
-            ) as itemsJson
-        FROM transactions t
-        LEFT JOIN transaction_items ti ON t.id = ti.transactionId
-        GROUP BY t.id
-        ORDER BY t.createdAt DESC");
-        $stmt->execute();
+        $conditions[] = 't.createdAt >= ? AND t.createdAt <= ?';
+        $params[] = $startDate;
+        $params[] = $endDate;
     }
+
+    if (isset($_SESSION['user_role']) && $_SESSION['user_role'] === 'cashier') {
+        $conditions[] = 't.cashierId = ?';
+        $params[] = $_SESSION['user_id'];
+    }
+
+    $whereClause = '';
+    if (!empty($conditions)) {
+        $whereClause = 'WHERE ' . implode(' AND ', $conditions);
+    }
+
+    $stmt = $pdo->prepare("SELECT 
+            t.*, 
+            GROUP_CONCAT(
+                JSON_OBJECT(
+                    'id', ti.id,
+                    'productId', ti.productId,
+                    'productName', ti.productName,
+                    'variantId', ti.variantId,
+                    'variantName', ti.variantName,
+                    'quantity', ti.quantity,
+                    'unitPrice', ti.unitPrice,
+                    'costPrice', COALESCE(p.costPrice, 0),
+                    'discount', 0,
+                    'total', ti.subtotal,
+                    'subtotal', ti.subtotal
+                ) SEPARATOR '|'
+            ) as itemsJson
+        FROM transactions t
+        LEFT JOIN transaction_items ti ON t.id = ti.transactionId
+        LEFT JOIN products p ON p.id = ti.productId
+        {$whereClause}
+        GROUP BY t.id
+        ORDER BY t.createdAt DESC");
+    $stmt->execute($params);
 
     $transactions = [];
 
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
         $items = [];
         if ($row['itemsJson']) {
-            $itemsArray = json_decode('[' . $row['itemsJson'] . ']', true);
-            $items = $itemsArray ?: [];
+            $itemsJsonArray = explode('|', $row['itemsJson']);
+            foreach ($itemsJsonArray as $itemJson) {
+                $item = json_decode($itemJson, true);
+                if ($item) {
+                    $items[] = $item;
+                }
+            }
         }
 
         $transactions[] = [

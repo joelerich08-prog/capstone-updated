@@ -75,7 +75,7 @@ try {
 
     $sourceTierMap = [
         'facebook' => 'shelf',
-        'sms' => 'retail',
+        'sms' => 'shelf',
         'website' => 'shelf',
     ];
 

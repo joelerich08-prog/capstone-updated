@@ -22,11 +22,13 @@ try {
                     'id', oi.id,
                     'productId', oi.productId,
                     'productName', oi.productName,
+                    'variantId', oi.variantId,
+                    'variantName', oi.variantName,
                     'quantity', oi.quantity,
                     'unitPrice', oi.unitPrice,
                     'discount', 0,
                     'total', (oi.quantity * oi.unitPrice)
-                )
+                ) SEPARATOR '|'
             ) as itemsJson
         FROM orders o
         LEFT JOIN order_items oi ON o.id = oi.orderId
@@ -40,8 +42,14 @@ try {
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
         $items = [];
         if ($row['itemsJson']) {
-            $itemsArray = json_decode('[' . $row['itemsJson'] . ']', true);
-            $items = $itemsArray ?: [];
+            // Split by pipe separator and decode each JSON object
+            $itemsJsonArray = explode('|', $row['itemsJson']);
+            foreach ($itemsJsonArray as $itemJson) {
+                $item = json_decode($itemJson, true);
+                if ($item) {
+                    $items[] = $item;
+                }
+            }
         }
         
     $orders[] = [

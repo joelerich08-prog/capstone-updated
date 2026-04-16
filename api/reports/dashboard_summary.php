@@ -20,21 +20,35 @@ try {
     $todaySales = (float)($salesRow['todaySales'] ?? 0);
 
     $stmt = $pdo->prepare(
-        "SELECT SUM((ti.unitPrice - p.costPrice) * ti.quantity) AS todayProfit
+        "SELECT SUM((ti.unitPrice - COALESCE(p.costPrice, 0)) * ti.quantity) AS todayProfit
          FROM transaction_items ti
          JOIN transactions t ON ti.transactionId = t.id
-         JOIN products p ON ti.productId = p.id
+         LEFT JOIN products p ON ti.productId = p.id
          WHERE DATE(t.createdAt) = ? AND t.status = 'completed'"
     );
     $stmt->execute([$today]);
     $profitRow = $stmt->fetch(PDO::FETCH_ASSOC);
     $todayProfit = (float)($profitRow['todayProfit'] ?? 0);
 
-    $stmt = $pdo->prepare("SELECT COUNT(*) AS lowStockCount FROM inventory_levels WHERE shelfQty <= reorderLevel");
+    // Calculate low stock similar to stock levels page logic:
+    // reorderLevel > 0 && totalStock <= reorderLevel && totalStock > 0
+    $stmt = $pdo->prepare("
+        SELECT COUNT(*) AS lowStockCount 
+        FROM inventory_levels 
+        WHERE reorderLevel > 0 
+        AND (wholesaleQty * packsPerBox * pcsPerPack + retailQty * pcsPerPack + shelfQty) <= reorderLevel
+        AND (wholesaleQty * packsPerBox * pcsPerPack + retailQty * pcsPerPack + shelfQty) > 0
+    ");
     $stmt->execute();
     $stockRow = $stmt->fetch(PDO::FETCH_ASSOC);
     $lowStockCount = (int)($stockRow['lowStockCount'] ?? 0);
-
+    $stmt = $pdo->prepare("\n        SELECT COUNT(*) AS outOfStockCount
+        FROM inventory_levels
+        WHERE (wholesaleQty * packsPerBox * pcsPerPack + retailQty * pcsPerPack + shelfQty) = 0
+    ");
+    $stmt->execute();
+    $outOfStockRow = $stmt->fetch(PDO::FETCH_ASSOC);
+    $outOfStockCount = (int)($outOfStockRow['outOfStockCount'] ?? 0);
     $stmt = $pdo->prepare(
         "SELECT p.id AS productId, p.name AS productName, SUM(ti.quantity) AS totalQuantity
          FROM transaction_items ti
@@ -52,6 +66,7 @@ try {
         'todaySales' => $todaySales,
         'todayProfit' => $todayProfit,
         'lowStockCount' => $lowStockCount,
+        'outOfStockCount' => $outOfStockCount,
         'topProducts' => $topProducts,
     ]);
 } catch (Exception $e) {

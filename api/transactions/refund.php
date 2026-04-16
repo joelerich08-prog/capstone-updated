@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../middleware/cors.php';
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../includes/inventory.php';
+require_once __DIR__ . '/../includes/transaction-validation.php';
 
 session_start();
 
@@ -15,6 +16,14 @@ $input = json_decode(file_get_contents('php://input'), true);
 if (!$input || !isset($input['transactionId'])) {
     http_response_code(400);
     echo json_encode(['error' => 'transactionId is required']);
+    exit;
+}
+
+// Validate refund request
+$validationErrors = validateRefundRequest($input);
+if (!empty($validationErrors)) {
+    http_response_code(400);
+    echo json_encode(['error' => 'Validation failed', 'details' => $validationErrors]);
     exit;
 }
 

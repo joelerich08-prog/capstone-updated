@@ -25,7 +25,7 @@ $productId = trim($data['productId']);
 $sourceTier = trim($data['sourceTier']);
 $destTier = trim($data['destTier']);
 $quantity = (int)$data['quantity'];
-$variantId = isset($data['variantId']) ? trim($data['variantId']) : null;
+$variantId = normalizeInventoryVariantId($data['variantId'] ?? null);
 
 $validTiers = ['wholesale', 'retail', 'shelf'];
 if (empty($productId) || $quantity <= 0 || !in_array($sourceTier, $validTiers, true) || !in_array($destTier, $validTiers, true)) {

@@ -23,7 +23,7 @@ if (!$data || !isset($data['productId']) || !isset($data['wholesaleQuantity'])) 
 
 $productId = trim($data['productId']);
 $wholesaleQuantity = (int)$data['wholesaleQuantity'];
-$variantId = isset($data['variantId']) ? trim($data['variantId']) : null;
+$variantId = normalizeInventoryVariantId($data['variantId'] ?? null);
 
 if (empty($productId) || $wholesaleQuantity <= 0) {
     http_response_code(400);
