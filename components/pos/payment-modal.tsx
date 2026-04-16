@@ -117,12 +117,13 @@ export function PaymentModal({ open, onClose }: PaymentModalProps) {
 
     const savedTransaction = await addTransaction(transactionPayload)
 
-    if (!savedTransaction) {
+    if (!savedTransaction.transaction) {
       setIsProcessing(false)
-      toast.error('Payment failed while saving transaction. Please try again.')
+      toast.error(savedTransaction.error || 'Payment failed while saving transaction. Please try again.')
       return
     }
 
+    const transaction = savedTransaction.transaction
     const amountPaid = paymentType === 'cash' ? amountReceived : total
     const changeGiven = paymentType === 'cash' ? Math.max(0, amountPaid - total) : 0
 
@@ -134,12 +135,12 @@ export function PaymentModal({ open, onClose }: PaymentModalProps) {
       paymentType,
       amountPaid,
       changeGiven,
-      invoiceNo: savedTransaction.invoiceNo,
+      invoiceNo: transaction.invoiceNo,
     })
 
     clearCart()
     await refreshInventory()
-    setInvoiceNo(savedTransaction.invoiceNo)
+    setInvoiceNo(transaction.invoiceNo)
     setIsComplete(true)
     setIsProcessing(false)
 

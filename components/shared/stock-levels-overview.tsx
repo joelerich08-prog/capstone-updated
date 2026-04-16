@@ -55,12 +55,15 @@ export function StockLevelsOverview({
   showActions = false,
   productHrefPrefix = '',
 }: StockLevelsOverviewProps) {
-  const { inventoryLevels, getInventory } = useInventory()
+  const { inventoryLevels, getInventory, updateInventoryConversion } = useInventory()
   const { products, categories } = useProducts()
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [stockFilter, setStockFilter] = useState<string>('all')
   const [expandedProducts, setExpandedProducts] = useState<Record<string, boolean>>({})
+  const [editingConversionId, setEditingConversionId] = useState<string | null>(null)
+  const [conversionForm, setConversionForm] = useState({ pcsPerPack: 1, packsPerBox: 1 })
+  const [isSavingConversion, setIsSavingConversion] = useState(false)
 
   const calculateTotalUnits = (inventory?: InventoryLevel) => {
     if (!inventory) {
@@ -209,6 +212,37 @@ export function StockLevelsOverview({
     }))
   }
 
+  const startConversionEdit = (inv: InventoryWithProduct | VariantInventoryWithProduct) => {
+    setEditingConversionId(inv.id)
+    setConversionForm({
+      pcsPerPack: inv.pcsPerPack,
+      packsPerBox: inv.packsPerBox,
+    })
+  }
+
+  const cancelConversionEdit = () => {
+    setEditingConversionId(null)
+  }
+
+  const saveConversionEdit = async (inv: InventoryWithProduct | VariantInventoryWithProduct) => {
+    if (conversionForm.pcsPerPack <= 0 || conversionForm.packsPerBox <= 0) {
+      return
+    }
+
+    setIsSavingConversion(true)
+    const result = await updateInventoryConversion(
+      inv.productId,
+      inv.variantId,
+      conversionForm.pcsPerPack,
+      conversionForm.packsPerBox,
+    )
+    setIsSavingConversion(false)
+
+    if (result.success) {
+      setEditingConversionId(null)
+    }
+  }
+
   const renderInventoryRow = (inv: InventoryWithProduct | VariantInventoryWithProduct, isVariant = false) => (
     <TableRow key={isVariant ? `${inv.productId}-${inv.variantId}` : inv.id}>
       <TableCell>
@@ -263,18 +297,65 @@ export function StockLevelsOverview({
       </TableCell>
       {showPackaging && (
         <TableCell className="text-center">
-          <div className="flex flex-col items-center gap-0.5">
-            <div className="flex items-center gap-1.5">
-              <Box className="size-4 text-muted-foreground" />
-              <span className="text-sm font-medium tabular-nums">
-                1 {inv.wholesaleUnit}
-              </span>
+          {editingConversionId === inv.id ? (
+            <div className="grid gap-2">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="flex flex-col items-center gap-1">
+                  <label className="text-xs text-muted-foreground">Pcs / pack</label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={conversionForm.pcsPerPack}
+                    onChange={(e) => setConversionForm((current) => ({
+                      ...current,
+                      pcsPerPack: Number(e.target.value),
+                    }))}
+                    className="w-24 text-center"
+                  />
+                </div>
+                <div className="flex flex-col items-center gap-1">
+                  <label className="text-xs text-muted-foreground">Packs / box</label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={conversionForm.packsPerBox}
+                    onChange={(e) => setConversionForm((current) => ({
+                      ...current,
+                      packsPerBox: Number(e.target.value),
+                    }))}
+                    className="w-24 text-center"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-center gap-2">
+                <Button size="sm" onClick={() => saveConversionEdit(inv)} disabled={isSavingConversion}>
+                  Save
+                </Button>
+                <Button size="sm" variant="secondary" onClick={cancelConversionEdit} disabled={isSavingConversion}>
+                  Cancel
+                </Button>
+              </div>
             </div>
-            <span className="text-xs text-muted-foreground">
-              = {inv.packsPerBox} {inv.retailUnit}
-              {inv.packsPerBox === 1 ? '' : 's'}
-            </span>
-          </div>
+          ) : (
+            <div className="flex flex-col items-center gap-0.5">
+              <div className="flex items-center gap-1.5">
+                <Box className="size-4 text-muted-foreground" />
+                <span className="text-sm font-medium tabular-nums">
+                  1 {inv.wholesaleUnit}
+                </span>
+              </div>
+              <span className="text-xs text-muted-foreground">
+                = {inv.packsPerBox} {inv.retailUnit}
+                {inv.packsPerBox === 1 ? '' : 's'}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {inv.pcsPerPack} pcs / {inv.retailUnit}
+              </span>
+              <Button size="sm" variant="outline" type="button" onClick={() => startConversionEdit(inv)}>
+                Edit
+              </Button>
+            </div>
+          )}
         </TableCell>
       )}
       <TableCell className="text-center">

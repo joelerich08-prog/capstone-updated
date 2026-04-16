@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Bell, Search } from 'lucide-react'
 import { SidebarTrigger } from '@/components/ui/sidebar'
@@ -16,11 +16,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
-import { useInventory } from '@/contexts/inventory-context'
-import { useBatches } from '@/contexts/batch-context'
-import { useProducts } from '@/contexts/products-context'
+import { apiFetch } from '@/lib/api-client'
 import { formatDistanceToNow } from 'date-fns'
-import type { Alert, AlertPriority } from '@/lib/types'
+import type { Alert } from '@/lib/types'
 
 interface DashboardHeaderProps {
   title: string
@@ -30,76 +28,27 @@ interface DashboardHeaderProps {
 
 export function DashboardHeader({ title, description, headerAction }: DashboardHeaderProps) {
   const router = useRouter()
-  const { inventoryLevels } = useInventory()
-  const { getExpiringBatches, getExpiredBatches } = useBatches()
-  const { products } = useProducts()
+  const [alerts, setAlerts] = useState<Alert[]>([])
 
-  const alerts = useMemo(() => {
-    const alertList: Array<Alert & { priority: AlertPriority }> = []
-
-    // Low stock alerts
-    inventoryLevels.forEach(inv => {
-      const product = products.find(p => p.id === inv.productId)
-      const totalStock = inv.wholesaleQty + inv.retailQty + inv.shelfQty
-
-      if (totalStock <= inv.reorderLevel && totalStock > 0) {
-        alertList.push({
-          id: `low-stock-${inv.productId}`,
-          type: 'low_stock',
-          title: 'Low Stock Alert',
-          message: `${product?.name || 'Product'} is running low (${totalStock} remaining)`,
-          priority: 'high',
-          createdAt: new Date(),
-          isRead: false,
-        })
-      } else if (totalStock === 0) {
-        alertList.push({
-          id: `out-of-stock-${inv.productId}`,
-          type: 'out_of_stock',
-          title: 'Out of Stock',
-          message: `${product?.name || 'Product'} is out of stock`,
-          priority: 'critical',
-          createdAt: new Date(),
-          isRead: false,
-        })
+  useEffect(() => {
+    const loadAlerts = async () => {
+      try {
+        const data = await apiFetch<Alert[]>('/api/alerts/get_all.php')
+        const normalized = data.map(alert => ({
+          ...alert,
+          createdAt: new Date(alert.createdAt),
+        }))
+        setAlerts(normalized)
+      } catch (error) {
+        console.error('Failed to load notifications:', error)
       }
-    })
+    }
 
-    // Expiring batches
-    const expiringBatches = getExpiringBatches(30)
-    expiringBatches.forEach(batch => {
-      const product = products.find(p => p.id === batch.productId)
-      alertList.push({
-        id: `expiring-${batch.id}`,
-        type: 'expiring',
-        title: 'Product Expiring Soon',
-        message: `${product?.name || 'Product'} batch expires ${formatDistanceToNow(batch.expirationDate, { addSuffix: true })}`,
-        priority: 'medium',
-        createdAt: new Date(),
-        isRead: false,
-      })
-    })
+    loadAlerts()
+  }, [])
 
-    // Expired batches
-    const expiredBatches = getExpiredBatches()
-    expiredBatches.forEach(batch => {
-      const product = products.find(p => p.id === batch.productId)
-      alertList.push({
-        id: `expired-${batch.id}`,
-        type: 'expired',
-        title: 'Product Expired',
-        message: `${product?.name || 'Product'} batch has expired`,
-        priority: 'critical',
-        createdAt: new Date(),
-        isRead: false,
-      })
-    })
-
-    return alertList
-  }, [inventoryLevels, products, getExpiringBatches, getExpiredBatches])
-
-  const unreadCount = alerts.length
-  const recentAlerts = alerts.slice(0, 5)
+  const unreadCount = useMemo(() => alerts.filter(a => !a.isRead).length, [alerts])
+  const recentAlerts = useMemo(() => alerts.slice(0, 5), [alerts])
 
   return (
     <header className="sticky top-0 z-10 flex h-14 items-center gap-4 border-b bg-background px-4">

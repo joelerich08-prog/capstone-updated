@@ -24,6 +24,7 @@ export function POSCart({ onCheckout }: POSCartProps) {
     removeItem,
     setDiscount,
     clearCart,
+    getItemKey,
   } = useCart()
 
   return (
@@ -58,7 +59,7 @@ export function POSCart({ onCheckout }: POSCartProps) {
             <div className="space-y-3 pb-4">
               {items.map((item) => (
                 <div
-                  key={`${item.productId}-${item.variantId || ''}-${item.productName}`}
+                  key={getItemKey(item.productId, item.variantId, item.productName)}
                   className="flex items-start gap-3 p-2 rounded-lg bg-muted/50"
                 >
                   <div className="flex-1 min-w-0">

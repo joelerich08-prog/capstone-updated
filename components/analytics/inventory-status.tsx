@@ -23,8 +23,13 @@ export function InventoryStatus() {
     return inventoryLevels
       .map((inv) => {
         const product = products.find((p) => p.id === inv.productId)
+        const variant = product?.variants.find((v) => v.id === inv.variantId)
+        const name = variant
+          ? `${product?.name ?? 'Unknown'} / ${variant.name}`
+          : product?.name ?? 'Unknown'
+
         return {
-          name: product?.name.slice(0, 12) || 'Unknown',
+          name: name.slice(0, 20),
           wholesale: inv.wholesaleQty,
           retail: inv.retailQty,
           shelf: inv.shelfQty,
@@ -33,7 +38,7 @@ export function InventoryStatus() {
       })
       .sort((a, b) => b.total - a.total)
       .slice(0, 8)
-  }, [inventoryLevels])
+  }, [inventoryLevels, products])
 
   return (
     <Card>

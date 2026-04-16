@@ -85,23 +85,24 @@ export function InventoryReportLive({ dateRange }: InventoryReportLiveProps) {
     let inStock = 0
     let lowStock = 0
     let outOfStock = 0
-    products.forEach(product => {
-      const inventory = inventoryByProduct.get(product.id)
-      const totalUnits = inventory ? inventory.wholesaleQty + inventory.retailQty + inventory.shelfQty : 0
+
+    inventoryLevels.forEach((level) => {
+      const totalUnits = level.wholesaleQty + level.retailQty + level.shelfQty
       if (totalUnits === 0) {
         outOfStock += 1
-      } else if (inventory && totalUnits <= inventory.reorderLevel) {
+      } else if (totalUnits <= level.reorderLevel) {
         lowStock += 1
       } else {
         inStock += 1
       }
     })
+
     return [
       { name: "In Stock", value: inStock, color: "hsl(var(--chart-2))" },
       { name: "Low Stock", value: lowStock, color: "hsl(var(--chart-4))" },
       { name: "Out of Stock", value: outOfStock, color: "hsl(var(--destructive))" },
     ]
-  }, [products, inventoryByProduct])
+  }, [inventoryLevels])
 
   const categoryStockData = useMemo(() => {
     const grouped = new Map<string, { category: string; wholesale: number; retail: number; shelf: number }>()
@@ -119,17 +120,25 @@ export function InventoryReportLive({ dateRange }: InventoryReportLiveProps) {
 
   const lowStockItems = useMemo(
     () =>
-      products
-        .map(product => {
-          const inventory = inventoryByProduct.get(product.id)
-          const current = inventory ? inventory.wholesaleQty + inventory.retailQty + inventory.shelfQty : 0
-          const minimum = inventory?.reorderLevel ?? 0
-          return { name: product.name, sku: product.sku, current, minimum, status: current === 0 ? "critical" : "low" }
+      inventoryLevels
+        .map(level => {
+          const product = products.find((product) => product.id === level.productId)
+          const variant = product?.variants.find((v) => v.id === level.variantId)
+          const current = level.wholesaleQty + level.retailQty + level.shelfQty
+          const minimum = level.reorderLevel
+          return {
+            name: product?.name ?? 'Unknown',
+            sku: product?.sku ?? 'Unknown',
+            variant: variant?.name,
+            current,
+            minimum,
+            status: current === 0 ? "critical" : "low",
+          }
         })
         .filter(item => item.minimum > 0 && item.current <= item.minimum)
         .sort((a, b) => a.current - b.current)
         .slice(0, 10),
-    [products, inventoryByProduct]
+    [inventoryLevels, products]
   )
 
   const stockMovement = useMemo(() => {
@@ -157,7 +166,7 @@ export function InventoryReportLive({ dateRange }: InventoryReportLiveProps) {
     return Array.from(grouped.values()).sort((a, b) => Math.abs(b.net) - Math.abs(a.net)).slice(0, 10)
   }, [movements, effectiveRange])
 
-  const totalItems = products.length
+  const totalItems = inventoryLevels.length
   const totalOnHandUnits = inventoryLevels.reduce((acc, level) => acc + level.wholesaleQty + level.retailQty + level.shelfQty, 0)
   const outOfStockCount = stockStatusData.find(item => item.name === "Out of Stock")?.value ?? 0
   const reorderCount = lowStockItems.length + outOfStockCount

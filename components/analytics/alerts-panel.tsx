@@ -23,14 +23,16 @@ export function AlertsPanel() {
     // Low stock alerts
     inventoryLevels.forEach(inv => {
       const product = products.find(p => p.id === inv.productId)
+      const variant = product?.variants.find((v) => v.id === inv.variantId)
+      const productLabel = variant ? `${product?.name || 'Product'} / ${variant.name}` : product?.name || 'Product'
       const totalStock = inv.wholesaleQty + inv.retailQty + inv.shelfQty
 
       if (totalStock <= inv.reorderLevel && totalStock > 0) {
         alertList.push({
-          id: `low-stock-${inv.productId}`,
+          id: `low-stock-${inv.id}`,
           type: 'low_stock',
           title: 'Low Stock Alert',
-          message: `${product?.name || 'Product'} is running low (${totalStock} remaining)`,
+          message: `${productLabel} is running low (${totalStock} remaining)`,
           priority: 'high',
           createdAt: new Date(),
           productId: inv.productId,
@@ -38,10 +40,10 @@ export function AlertsPanel() {
         })
       } else if (totalStock === 0) {
         alertList.push({
-          id: `out-of-stock-${inv.productId}`,
+          id: `out-of-stock-${inv.id}`,
           type: 'out_of_stock',
           title: 'Out of Stock',
-          message: `${product?.name || 'Product'} is out of stock`,
+          message: `${productLabel} is out of stock`,
           priority: 'critical',
           createdAt: new Date(),
           productId: inv.productId,
