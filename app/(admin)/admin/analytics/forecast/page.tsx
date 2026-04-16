@@ -1,161 +1,102 @@
 'use client'
 
-import dynamic from 'next/dynamic'
-import { useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import { DashboardShell } from '@/components/layout/dashboard-shell'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { formatCurrency, formatPesoShort } from '@/lib/utils/currency'
-import { useProducts } from '@/contexts/products-context'
-import { useTransactions } from '@/contexts/transaction-context'
-import { useInventory } from '@/contexts/inventory-context'
-import { format, subDays, startOfDay, endOfDay } from 'date-fns'
+import { apiFetch } from '@/lib/api-client'
 import { 
   TrendingUp, 
-  TrendingDown,
-  Package,
   AlertTriangle,
   Clock,
   ShoppingCart,
   ArrowRight
 } from 'lucide-react'
-const AreaChart: any = dynamic(() => import('recharts').then(mod => mod.AreaChart as any), { ssr: false })
-const Area: any = dynamic(() => import('recharts').then(mod => mod.Area as any), { ssr: false })
-const XAxis: any = dynamic(() => import('recharts').then(mod => mod.XAxis as any), { ssr: false })
-const YAxis: any = dynamic(() => import('recharts').then(mod => mod.YAxis as any), { ssr: false })
-const CartesianGrid: any = dynamic(() => import('recharts').then(mod => mod.CartesianGrid as any), { ssr: false })
-const Tooltip: any = dynamic(() => import('recharts').then(mod => mod.Tooltip as any), { ssr: false })
-const ResponsiveContainer: any = dynamic(() => import('recharts').then(mod => mod.ResponsiveContainer as any), { ssr: false })
-const Line: any = dynamic(() => import('recharts').then(mod => mod.Line as any), { ssr: false })
-const ComposedChart: any = dynamic(() => import('recharts').then(mod => mod.ComposedChart as any), { ssr: false })
+import {
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Line,
+  ComposedChart,
+} from 'recharts'
+
+interface ForecastPoint {
+  date: string
+  actual?: number
+  forecast?: number
+}
+
+interface ProjectionSummary {
+  projection: number
+  lastWeekActual: number
+  changePercent: number
+}
+
+interface StockForecastItem {
+  id: string
+  name: string
+  currentStock: number
+  avgDailySales: number
+  daysUntilStockout: number
+  reorderPoint: number
+  inventoryTurnover: number
+  needsReorder: boolean
+  status: 'critical' | 'warning' | 'healthy'
+}
 
 export default function ForecastPage() {
-  const { products } = useProducts()
-  const { transactions } = useTransactions()
-  const { inventoryLevels } = useInventory()
-  
-  // Generate sales forecast from real transaction data
-  const forecastData = useMemo(() => {
-    const result: { date: string; actual?: number; forecast?: number }[] = []
-    const historicalByWeekday = new Map<number, { total: number; count: number }>()
-    
-    // Historical data (last 14 days)
-    for (let i = 13; i >= 0; i--) {
-      const date = subDays(new Date(), i)
-      const dayStart = startOfDay(date)
-      const dayEnd = endOfDay(date)
-      const dayTxns = transactions.filter(t => {
-        const txnDate = new Date(t.createdAt)
-        return txnDate >= dayStart && txnDate <= dayEnd
-      })
-      const total = dayTxns.reduce((sum, t) => sum + t.total, 0)
-      const weekday = date.getDay()
-      const weekdayEntry = historicalByWeekday.get(weekday) ?? { total: 0, count: 0 }
-      weekdayEntry.total += total
-      weekdayEntry.count += 1
-      historicalByWeekday.set(weekday, weekdayEntry)
-      result.push({
-        date: format(date, 'MMM d'),
-        actual: total,
-      })
-    }
-    
-    // Calculate average for forecast using the recent baseline and weekday seasonality
-    const recentTotals = result.slice(-7).map(d => d.actual || 0)
-    const avgDaily = recentTotals.reduce((a, b) => a + b, 0) / 7
-    const overallHistoricalAverage = result.reduce((sum, entry) => sum + (entry.actual || 0), 0) / 14
-    
-    // Forecast data (next 7 days)
-    for (let i = 1; i <= 7; i++) {
-      const date = new Date()
-      date.setDate(date.getDate() + i)
-      const weekday = date.getDay()
-      const weekdayEntry = historicalByWeekday.get(weekday)
-      const weekdayAverage = weekdayEntry && weekdayEntry.count > 0
-        ? weekdayEntry.total / weekdayEntry.count
-        : overallHistoricalAverage
-      const seasonalityFactor = overallHistoricalAverage > 0
-        ? weekdayAverage / overallHistoricalAverage
-        : 1
-      result.push({
-        date: format(date, 'MMM d'),
-        forecast: Math.max(0, Math.round(avgDaily * seasonalityFactor)),
-      })
-    }
-    
-    return result
-  }, [transactions])
-  
-  // Calculate 7-day projection
-  const projection = useMemo(() => {
-    const last7Days = transactions.filter(t => {
-      const txnDate = new Date(t.createdAt)
-      const weekAgo = subDays(new Date(), 7)
-      return txnDate >= weekAgo
-    })
-    const last7Total = last7Days.reduce((sum, t) => sum + t.total, 0)
-    
-    const prev7Days = transactions.filter(t => {
-      const txnDate = new Date(t.createdAt)
-      const twoWeeksAgo = subDays(new Date(), 14)
-      const weekAgo = subDays(new Date(), 7)
-      return txnDate >= twoWeeksAgo && txnDate < weekAgo
-    })
-    const prev7Total = prev7Days.reduce((sum, t) => sum + t.total, 0)
-    
-    const changePercent = prev7Total > 0 ? ((last7Total - prev7Total) / prev7Total) * 100 : 0
-    
-    return {
-      projection: Math.round(last7Total * 1.05), // 5% growth projection
-      lastWeekActual: last7Total,
-      changePercent,
-    }
-  }, [transactions])
-  
-  // Calculate stock depletion forecast
-  const stockForecast = useMemo(() => {
-    return products.slice(0, 8).map((product) => {
-      const inventory = inventoryLevels.find(inv => inv.productId === product.id)
-      const totalStock = inventory 
-        ? inventory.wholesaleQty * inventory.packsPerBox * inventory.pcsPerPack +
-          inventory.retailQty * inventory.pcsPerPack +
-          inventory.shelfQty
-        : 0
-      
-      // Calculate sales velocity from transactions
-      const twoWeeksAgo = subDays(new Date(), 14)
-      const productSales = transactions
-        .filter(t => new Date(t.createdAt) >= twoWeeksAgo)
-        .flatMap(t => t.items)
-        .filter(item => item.productId === product.id)
-        .reduce((sum, item) => sum + item.quantity, 0)
-      
-      const avgDailySales = Math.max(1, Math.round((productSales / 14) * 10) / 10)
-      
-      const daysUntilStockout = totalStock > 0 && avgDailySales > 0 
-        ? Math.floor(totalStock / avgDailySales) 
-        : 0
-      const reorderPoint = inventory?.reorderLevel || 50
-      
-      return {
-        id: product.id,
-        name: product.name,
-        currentStock: totalStock,
-        avgDailySales,
-        daysUntilStockout,
-        reorderPoint,
-        needsReorder: totalStock <= reorderPoint,
-        status: daysUntilStockout <= 3 ? 'critical' as const : daysUntilStockout <= 7 ? 'warning' as const : 'healthy' as const,
+  const [historicalData, setHistoricalData] = useState<ForecastPoint[]>([])
+  const [forecastData, setForecastData] = useState<ForecastPoint[]>([])
+  const [projection, setProjection] = useState<ProjectionSummary>({ projection: 0, lastWeekActual: 0, changePercent: 0 })
+  const [stockForecast, setStockForecast] = useState<StockForecastItem[]>([])
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+
+  const chartData = [...historicalData, ...forecastData]
+
+  useEffect(() => {
+    const fetchForecast = async () => {
+      setIsLoading(true)
+      setAnalyticsError(null)
+      try {
+        const result = await apiFetch<{
+          historicalData: ForecastPoint[]
+          forecastData: ForecastPoint[]
+          projection: ProjectionSummary
+          stockForecast: StockForecastItem[]
+        }>('/api/analytics/forecast.php')
+
+        setHistoricalData(result.historicalData)
+        setForecastData(result.forecastData)
+        setProjection(result.projection)
+        setStockForecast(result.stockForecast)
+      } catch (error) {
+        console.error('Failed to load forecast analytics:', error)
+        setAnalyticsError(error instanceof Error ? error.message : 'Unable to load forecast analytics')
+      } finally {
+        setIsLoading(false)
       }
-    })
-  }, [transactions, inventoryLevels, products])
+    }
+
+    fetchForecast()
+  }, [])
   
   const nextWeekProjection = projection.projection
   const projectionChange = projection.changePercent
   const criticalItems = stockForecast.filter(item => item.status === 'critical').length
   const warningItems = stockForecast.filter(item => item.status === 'warning').length
   const needsReorder = stockForecast.filter(item => item.needsReorder).length
+  const averageTurnover = stockForecast.length > 0
+    ? stockForecast.reduce((sum, item) => sum + item.inventoryTurnover, 0) / stockForecast.length
+    : 0
+  const averageStockDays = stockForecast.length > 0
+    ? stockForecast.reduce((sum, item) => sum + item.daysUntilStockout, 0) / stockForecast.length
+    : 0
 
   return (
     <DashboardShell
@@ -223,6 +164,30 @@ export default function ForecastPage() {
             </div>
           </CardContent>
         </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Avg Inventory Turnover</p>
+                <p className="text-xl font-bold">{averageTurnover.toFixed(2)}x</p>
+                <p className="text-xs text-muted-foreground">Annual inventory efficiency</p>
+              </div>
+              <TrendingUp className="size-8 text-sky-500" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Avg Days Until Stockout</p>
+                <p className="text-xl font-bold">{averageStockDays.toFixed(0)}</p>
+                <p className="text-xs text-muted-foreground">Across forecasted stock items</p>
+              </div>
+              <Clock className="size-8 text-yellow-500" />
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Sales Forecast Chart */}
@@ -235,9 +200,22 @@ export default function ForecastPage() {
         </CardHeader>
         <CardContent>
           <div className="h-[350px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={forecastData}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+            {isLoading ? (
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                Loading forecast analytics...
+              </div>
+            ) : analyticsError ? (
+              <div className="flex h-full items-center justify-center text-sm text-destructive">
+                {analyticsError}
+              </div>
+            ) : chartData.length === 0 ? (
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                No forecast data is available.
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                 <XAxis 
                   dataKey="date" 
                   className="text-xs"
@@ -279,6 +257,7 @@ export default function ForecastPage() {
                 />
               </ComposedChart>
             </ResponsiveContainer>
+          )}
           </div>
           <div className="flex items-center justify-center gap-6 mt-4 text-sm">
             <div className="flex items-center gap-2">
@@ -307,8 +286,8 @@ export default function ForecastPage() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {stockForecast.map((item) => (
-              <div key={item.id} className="rounded-lg border p-4">
+            {stockForecast.map((item, index) => (
+              <div key={`${item.id}-${index}`} className="rounded-lg border p-4">
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <div className="flex items-center gap-2">
@@ -353,6 +332,10 @@ export default function ForecastPage() {
                       ''
                     }`}
                   />
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>Inventory Turnover</span>
+                    <span>{item.inventoryTurnover.toFixed(2)}x</span>
+                  </div>
                 </div>
                 {item.needsReorder && (
                   <div className="flex items-center gap-2 mt-3 text-sm text-orange-600">

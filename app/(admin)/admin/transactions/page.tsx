@@ -49,6 +49,7 @@ import { useUsers } from '@/contexts/users-context'
 import { useInventory } from '@/contexts/inventory-context'
 import { formatPeso } from '@/lib/utils/currency'
 import { format, startOfDay, endOfDay, subDays, isWithinInterval } from 'date-fns'
+import { API_BASE_URL } from '@/lib/api-client'
 import { usePagination } from '@/hooks/use-pagination'
 import { TablePagination } from '@/components/shared/table-pagination'
 import {
@@ -169,31 +170,53 @@ export default function TransactionsPage() {
     return { totalSales, totalTransactions, avgTransaction, refundedTotal, refundedCount: refundedTransactions.length, paymentBreakdown }
   }, [filteredTransactions])
 
-  const handleExport = () => {
-    const escapeCsv = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`
-    const csvContent = [
-      ['Invoice', 'Date', 'Time', 'Cashier', 'Items', 'Payment', 'Status', 'Total'].map(escapeCsv).join(','),
-      ...filteredTransactions.map(txn => [
-        escapeCsv(txn.invoiceNo),
-        escapeCsv(format(new Date(txn.createdAt), 'yyyy-MM-dd')),
-        escapeCsv(format(new Date(txn.createdAt), 'HH:mm')),
-        escapeCsv(getCashierName(txn.cashierId)),
-        escapeCsv(txn.items.map(item => `${item.quantity}x ${item.productName}${item.variantName ? ` (${item.variantName})` : ''}`).join('; ')),
-        escapeCsv(txn.paymentType),
-        escapeCsv(txn.status),
-        escapeCsv(txn.total.toFixed(2)),
-      ].join(','))
-    ].join('\n')
+  const handleExport = async () => {
+    try {
+      // Build query parameters from current filters
+      const params = new URLSearchParams()
+      
+      if (search) params.append('search', search)
+      if (paymentFilter !== 'all') params.append('paymentType', paymentFilter)
+      if (statusFilter !== 'all') params.append('status', statusFilter)
+      if (cashierFilter !== 'all') params.append('cashierId', cashierFilter)
+      if (dateRange?.from) {
+        params.append('startDate', format(dateRange.from, 'yyyy-MM-dd'))
+        if (dateRange.to) {
+          params.append('endDate', format(dateRange.to, 'yyyy-MM-dd'))
+        }
+      }
 
-    const blob = new Blob([csvContent], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `transactions-${format(new Date(), 'yyyy-MM-dd')}.csv`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+      // Download CSV from server
+      const url = `${API_BASE_URL}/api/transactions/export_csv.php?${params.toString()}`
+      const response = await fetch(url, { credentials: 'include' })
+      
+      if (!response.ok) {
+        const text = await response.text()
+        let errorMessage = text
+        try {
+          const json = JSON.parse(text)
+          errorMessage = json.error || text
+        } catch {
+          // response was not JSON
+        }
+        toast.error(errorMessage || 'Failed to export transactions')
+        return
+      }
+
+      const blob = await response.blob()
+      const downloadUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = downloadUrl
+      a.download = `transactions-${format(new Date(), 'yyyy-MM-dd-HHmmss')}.csv`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(downloadUrl)
+      toast.success('Transactions exported successfully')
+    } catch (error) {
+      console.error('Export error:', error)
+      toast.error('Failed to export transactions')
+    }
   }
 
   const handleRefund = async () => {
@@ -465,7 +488,7 @@ export default function TransactionsPage() {
             </TableBody>
           </Table>
 
-          {filteredTransactions.length === 0 && (
+          {pagination.paginatedItems.length === 0 && (
             <div className="text-center py-12 text-muted-foreground">
               No transactions found matching your filters.
             </div>

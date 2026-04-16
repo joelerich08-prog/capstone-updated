@@ -45,6 +45,8 @@ import { useInventory } from '@/contexts/inventory-context'
 import { useAuth } from '@/contexts/auth-context'
 import { useProducts } from '@/contexts/products-context'
 import { formatCurrency } from '@/lib/utils/currency'
+import { usePagination } from '@/hooks/use-pagination'
+import { TablePagination } from '@/components/shared/table-pagination'
 
 // Constants for expiry warnings
 const EXPIRY_WARNING_DAYS = 30
@@ -142,6 +144,8 @@ export default function ExpiryManagementPage() {
     }
     return matchesSearch && batch.status === statusFilter
   }).sort((a, b) => a.expirationDate.getTime() - b.expirationDate.getTime())
+
+  const pagination = usePagination(filteredBatches, { itemsPerPage: 10 })
 
   const handleDispose = async () => {
     if (!selectedBatchId) return
@@ -393,7 +397,7 @@ export default function ExpiryManagementPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredBatches.map((batch) => {
+                {pagination.paginatedItems.map((batch) => {
                   const product = products.find(p => p.id === batch.productId)
                   const totalQty = getBatchTotalUnits(batch)
                   const value = getBatchValue(batch)
@@ -463,7 +467,7 @@ export default function ExpiryManagementPage() {
                     </TableRow>
                   )
                 })}
-                {filteredBatches.length === 0 && (
+                {pagination.paginatedItems.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
                       <Package className="size-12 mx-auto mb-4 opacity-50" />
@@ -475,6 +479,21 @@ export default function ExpiryManagementPage() {
               </TableBody>
             </Table>
           </div>
+
+          {filteredBatches.length > 0 && (
+            <TablePagination
+              currentPage={pagination.currentPage}
+              totalPages={pagination.totalPages}
+              startIndex={pagination.startIndex}
+              endIndex={pagination.endIndex}
+              totalItems={pagination.totalItems}
+              itemsPerPage={pagination.itemsPerPage}
+              onPageChange={pagination.goToPage}
+              onPrevPage={pagination.goToPrevPage}
+              onNextPage={pagination.goToNextPage}
+              onItemsPerPageChange={pagination.setItemsPerPage}
+            />
+          )}
         </CardContent>
       </Card>
 

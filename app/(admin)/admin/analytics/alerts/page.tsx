@@ -23,9 +23,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { useProducts } from '@/contexts/products-context'
-import { useInventory } from '@/contexts/inventory-context'
-import { useBatches } from '@/contexts/batch-context'
+import { apiFetch } from '@/lib/api-client'
 import type { Alert, AlertType, AlertPriority } from '@/lib/types'
 import { 
   AlertTriangle, 
@@ -76,107 +74,7 @@ const priorityConfig: Record<AlertPriority, { label: string; color: string }> = 
   low: { label: 'Low', color: 'bg-slate-500 text-white' },
 }
 
-function generateLiveAlerts(
-  products: Array<{ id: string; name: string }>,
-  inventoryLevels: Array<{ productId: string; wholesaleQty: number; retailQty: number; shelfQty: number; reorderLevel: number }>,
-  batches: Array<{ id: string; productId: string; batchNumber: string; expirationDate: Date; wholesaleQty: number; retailQty: number; shelfQty: number }>,
-): Alert[] {
-  const alerts: Alert[] = []
-
-  inventoryLevels.forEach(inv => {
-    const product = products.find(p => p.id === inv.productId)
-    const totalStock = inv.wholesaleQty + inv.retailQty + inv.shelfQty
-
-    if (totalStock === 0) {
-      alerts.push({
-        id: `out-of-stock-${inv.productId}`,
-        type: 'out_of_stock',
-        priority: 'critical',
-        title: `Out of Stock: ${product?.name || 'Product'}`,
-        message: `${product?.name || 'Product'} has no remaining stock.`,
-        productId: inv.productId,
-        isRead: false,
-        createdAt: new Date(),
-      })
-      return
-    }
-
-    if (totalStock <= inv.reorderLevel) {
-      alerts.push({
-        id: `low-stock-${inv.productId}`,
-        type: 'low_stock',
-        priority: totalStock <= Math.max(1, Math.floor(inv.reorderLevel * 0.5)) ? 'high' : 'medium',
-        title: `Low Stock: ${product?.name || 'Product'}`,
-        message: `${product?.name || 'Product'} is running low with ${totalStock} units remaining.`,
-        productId: inv.productId,
-        isRead: false,
-        createdAt: new Date(),
-      })
-    }
-  })
-
-  const now = new Date()
-  batches.forEach(batch => {
-    const product = products.find(p => p.id === batch.productId)
-    const daysUntilExpiry = Math.ceil((batch.expirationDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-    const totalQty = batch.wholesaleQty + batch.retailQty + batch.shelfQty
-
-    if (daysUntilExpiry <= 0) {
-      alerts.push({
-        id: `expired-${batch.id}`,
-        type: 'expired',
-        priority: 'critical',
-        title: `Expired: ${product?.name || 'Product'}`,
-        message: `${product?.name || 'Product'} batch ${batch.batchNumber || batch.id} has expired.`,
-        productId: batch.productId,
-        isRead: false,
-        createdAt: new Date(batch.expirationDate),
-      })
-      return
-    }
-
-    if (daysUntilExpiry <= 7) {
-      alerts.push({
-        id: `critical-expiring-${batch.id}`,
-        type: 'expiring',
-        priority: 'high',
-        title: `Expiring Soon: ${product?.name || 'Product'}`,
-        message: `${product?.name || 'Product'} batch ${batch.batchNumber || batch.id} expires in ${daysUntilExpiry} day${daysUntilExpiry === 1 ? '' : 's'}.`,
-        productId: batch.productId,
-        isRead: false,
-        createdAt: new Date(),
-      })
-      return
-    }
-
-    if (daysUntilExpiry <= 30 && totalQty > 0) {
-      alerts.push({
-        id: `expiring-${batch.id}`,
-        type: 'expiring',
-        priority: 'medium',
-        title: `Expiring Soon: ${product?.name || 'Product'}`,
-        message: `${product?.name || 'Product'} batch ${batch.batchNumber || batch.id} expires in ${daysUntilExpiry} days.`,
-        productId: batch.productId,
-        isRead: false,
-        createdAt: new Date(),
-      })
-    }
-  })
-
-  return alerts.sort((a, b) => {
-    if (a.isRead !== b.isRead) return a.isRead ? 1 : -1
-    const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 }
-    if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
-      return priorityOrder[a.priority] - priorityOrder[b.priority]
-    }
-    return b.createdAt.getTime() - a.createdAt.getTime()
-  }).slice(0, 30)
-}
-
 export default function AlertsPage() {
-  const { products } = useProducts()
-  const { inventoryLevels } = useInventory()
-  const { batches } = useBatches()
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [priorityFilter, setPriorityFilter] = useState<string>('all')
@@ -184,11 +82,22 @@ export default function AlertsPage() {
   const [selectedAlerts, setSelectedAlerts] = useState<string[]>([])
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
 
-  useEffect(() => {
-    if (products.length > 0) {
-      setAlerts(generateLiveAlerts(products, inventoryLevels, batches))
+  const loadAlerts = async () => {
+    try {
+      const data = await apiFetch<Alert[]>('/api/alerts/get_all.php')
+      const alertsWithDates = data.map(alert => ({
+        ...alert,
+        createdAt: new Date(alert.createdAt),
+      }))
+      setAlerts(alertsWithDates)
+    } catch (error) {
+      console.error('Failed to load alerts:', error)
     }
-  }, [products, inventoryLevels, batches])
+  }
+
+  useEffect(() => {
+    loadAlerts()
+  }, [])
 
   const filteredAlerts = alerts.filter(alert => {
     const matchesType = typeFilter === 'all' || alert.type === typeFilter
@@ -200,22 +109,53 @@ export default function AlertsPage() {
   const unreadCount = alerts.filter(a => !a.isRead).length
   const criticalCount = alerts.filter(a => a.priority === 'critical' && !a.isRead).length
 
-  const handleMarkAsRead = (alertId: string) => {
-    setAlerts(alerts.map(a => 
-      a.id === alertId ? { ...a, isRead: true } : a
-    ))
+  const handleMarkAsRead = async (alertId: string) => {
+    try {
+      await apiFetch('/api/alerts/mark_read.php', {
+        method: 'POST',
+        body: { ids: [alertId] },
+      })
+      setAlerts(alerts.map(a => 
+        a.id === alertId ? { ...a, isRead: true } : a
+      ))
+    } catch (error) {
+      console.error('Failed to mark alert as read:', error)
+      toast.error('Failed to mark alert as read')
+    }
   }
 
-  const handleMarkAllAsRead = () => {
-    setAlerts(alerts.map(a => ({ ...a, isRead: true })))
-    toast.success('All alerts marked as read')
+  const handleMarkAllAsRead = async () => {
+    try {
+      const ids = alerts.filter(a => !a.isRead).map(a => a.id)
+      if (ids.length === 0) {
+        return
+      }
+      await apiFetch('/api/alerts/mark_read.php', {
+        method: 'POST',
+        body: { ids },
+      })
+      setAlerts(alerts.map(a => ({ ...a, isRead: true })))
+      toast.success('All alerts marked as read')
+    } catch (error) {
+      console.error('Failed to mark all alerts as read:', error)
+      toast.error('Failed to mark all alerts as read')
+    }
   }
 
-  const handleDeleteSelected = () => {
-    setAlerts(alerts.filter(a => !selectedAlerts.includes(a.id)))
-    setSelectedAlerts([])
-    setShowDeleteDialog(false)
-    toast.success('Selected alerts deleted')
+  const handleDeleteSelected = async () => {
+    try {
+      await apiFetch('/api/alerts/delete.php', {
+        method: 'POST',
+        body: { ids: selectedAlerts },
+      })
+      setAlerts(alerts.filter(a => !selectedAlerts.includes(a.id)))
+      setSelectedAlerts([])
+      setShowDeleteDialog(false)
+      toast.success('Selected alerts deleted')
+    } catch (error) {
+      console.error('Failed to delete alerts:', error)
+      toast.error('Failed to delete alerts')
+    }
   }
 
   const handleToggleSelect = (alertId: string) => {

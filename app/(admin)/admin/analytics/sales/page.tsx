@@ -1,7 +1,6 @@
 'use client'
 
-import dynamic from 'next/dynamic'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { DashboardShell } from '@/components/layout/dashboard-shell'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -15,7 +14,7 @@ import {
 import { StatCard } from '@/components/shared/stat-card'
 import { DatePickerWithRange } from '@/components/shared/date-range-picker'
 import { formatCurrency, formatPesoShort } from '@/lib/utils/currency'
-import { useTransactions } from '@/contexts/transaction-context'
+import { apiFetch } from '@/lib/api-client'
 import type { DateRange } from 'react-day-picker'
 import {
   TrendingUp,
@@ -27,22 +26,35 @@ import {
   Calendar,
   Download,
 } from 'lucide-react'
-import { format, subDays, startOfDay, endOfDay } from 'date-fns'
+import { format, subDays } from 'date-fns'
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  PieChart,
+  Pie,
+  Cell,
+} from 'recharts'
 
 const COLORS = ['#22c55e', '#3b82f6', '#8b5cf6']
 
-const ResponsiveContainer: any = dynamic(() => import('recharts').then(mod => mod.ResponsiveContainer as any), { ssr: false })
-const LineChart: any = dynamic(() => import('recharts').then(mod => mod.LineChart as any), { ssr: false })
-const Line: any = dynamic(() => import('recharts').then(mod => mod.Line as any), { ssr: false })
-const BarChart: any = dynamic(() => import('recharts').then(mod => mod.BarChart as any), { ssr: false })
-const Bar: any = dynamic(() => import('recharts').then(mod => mod.Bar as any), { ssr: false })
-const XAxis: any = dynamic(() => import('recharts').then(mod => mod.XAxis as any), { ssr: false })
-const YAxis: any = dynamic(() => import('recharts').then(mod => mod.YAxis as any), { ssr: false })
-const CartesianGrid: any = dynamic(() => import('recharts').then(mod => mod.CartesianGrid as any), { ssr: false })
-const Tooltip: any = dynamic(() => import('recharts').then(mod => mod.Tooltip as any), { ssr: false })
-const PieChart: any = dynamic(() => import('recharts').then(mod => mod.PieChart as any), { ssr: false })
-const Pie: any = dynamic(() => import('recharts').then(mod => mod.Pie as any), { ssr: false })
-const Cell: any = dynamic(() => import('recharts').then(mod => mod.Cell as any), { ssr: false })
+interface SalesDataPoint {
+  date: string
+  sales: number
+  transactions: number
+}
+
+interface PaymentDataPoint {
+  type: string
+  total: number
+  count: number
+}
 
 function escapeCsvValue(value: string | number): string {
   const stringValue = String(value)
@@ -53,102 +65,58 @@ function escapeCsvValue(value: string | number): string {
 }
 
 export default function SalesAnalyticsPage() {
-  const { transactions } = useTransactions()
   const [period, setPeriod] = useState<'7' | '14' | '30' | 'custom'>('7')
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined)
+  const [salesData, setSalesData] = useState<SalesDataPoint[]>([])
+  const [paymentData, setPaymentData] = useState<PaymentDataPoint[]>([
+    { type: 'Cash', total: 0, count: 0 },
+    { type: 'GCash', total: 0, count: 0 },
+    { type: 'Maya', total: 0, count: 0 },
+  ])
+  const [previousPeriodSales, setPreviousPeriodSales] = useState(0)
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
   const days = period === 'custom' && dateRange?.from && dateRange?.to
     ? Math.ceil((dateRange.to.getTime() - dateRange.from.getTime()) / (1000 * 60 * 60 * 24)) + 1
     : parseInt(period === 'custom' ? '7' : period)
 
-  const getSalesByDay = (numDays: number) => {
-    const result: { date: string; sales: number; transactions: number }[] = []
-    for (let i = numDays - 1; i >= 0; i--) {
-      const date = subDays(new Date(), i)
-      const dayStart = startOfDay(date)
-      const dayEnd = endOfDay(date)
-      const dayTxns = transactions.filter(t => {
-        const txnDate = new Date(t.createdAt)
-        return txnDate >= dayStart && txnDate <= dayEnd
-      })
-      result.push({
-        date: format(date, 'MMM d'),
-        sales: dayTxns.reduce((sum, t) => sum + t.total, 0),
-        transactions: dayTxns.length,
-      })
-    }
-    return result
-  }
+  const fetchAnalytics = async () => {
+    setIsLoading(true)
+    setAnalyticsError(null)
+    try {
+      const params = new URLSearchParams()
+      params.set('period', period)
 
-  const getSalesByDateRange = (from: Date, to: Date) => {
-    const result: { date: string; sales: number; transactions: number }[] = []
-    let current = from
-    while (current <= to) {
-      const dayStart = startOfDay(current)
-      const dayEnd = endOfDay(current)
-      const dayTxns = transactions.filter(t => {
-        const txnDate = new Date(t.createdAt)
-        return txnDate >= dayStart && txnDate <= dayEnd
-      })
-      result.push({
-        date: format(current, 'MMM d'),
-        sales: dayTxns.reduce((sum, t) => sum + t.total, 0),
-        transactions: dayTxns.length,
-      })
-      current = new Date(current.getTime() + 24 * 60 * 60 * 1000)
-    }
-    return result
-  }
-
-  const getSalesByPaymentType = () => {
-    const paymentTypes = ['Cash', 'GCash', 'Maya'] as const
-    return paymentTypes.map(type => {
-      const typeLower = type.toLowerCase()
-      const txns = transactions.filter(t => t.paymentType === typeLower)
-      return {
-        type,
-        total: txns.reduce((sum, t) => sum + t.total, 0),
-        count: txns.length,
+      if (period === 'custom' && dateRange?.from && dateRange?.to) {
+        params.set('startDate', format(dateRange.from, 'yyyy-MM-dd'))
+        params.set('endDate', format(dateRange.to, 'yyyy-MM-dd'))
       }
-    })
+
+      const result = await apiFetch<{
+        salesData: SalesDataPoint[]
+        paymentData: PaymentDataPoint[]
+        previousPeriodSales: number
+      }>(`/api/analytics/sales_summary.php?${params.toString()}`)
+
+      setSalesData(result.salesData)
+      setPaymentData(result.paymentData)
+      setPreviousPeriodSales(result.previousPeriodSales)
+    } catch (error) {
+      console.error('Failed to load sales analytics:', error)
+      setAnalyticsError(error instanceof Error ? error.message : 'Unable to load sales analytics')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const getPaymentTypesByDateRange = (from: Date, to: Date) => {
-    const paymentTypes = ['Cash', 'GCash', 'Maya'] as const
-    return paymentTypes.map(type => {
-      const typeLower = type.toLowerCase()
-      const txns = transactions.filter(t => {
-        const txnDate = new Date(t.createdAt)
-        return t.paymentType === typeLower && txnDate >= startOfDay(from) && txnDate <= endOfDay(to)
-      })
-      return {
-        type,
-        total: txns.reduce((sum, t) => sum + t.total, 0),
-        count: txns.length,
-      }
-    })
-  }
-
-  const salesData = period === 'custom' && dateRange?.from && dateRange?.to
-    ? getSalesByDateRange(dateRange.from, dateRange.to)
-    : getSalesByDay(days)
-  const paymentData = period === 'custom' && dateRange?.from && dateRange?.to
-    ? getPaymentTypesByDateRange(dateRange.from, dateRange.to)
-    : getSalesByPaymentType()
+  useEffect(() => {
+    fetchAnalytics()
+  }, [period, dateRange])
 
   const totalSales = salesData.reduce((sum, day) => sum + day.sales, 0)
   const totalTransactions = salesData.reduce((sum, day) => sum + day.transactions, 0)
   const avgTransactionValue = totalTransactions > 0 ? totalSales / totalTransactions : 0
-
-  const referenceDate = period === 'custom' && dateRange?.from ? dateRange.from : subDays(new Date(), days)
-  const previousPeriodSales = transactions
-    .filter(tx => {
-      const txDate = new Date(tx.createdAt)
-      const start = subDays(referenceDate, days)
-      const end = referenceDate
-      return txDate >= start && txDate < end
-    })
-    .reduce((sum, tx) => sum + tx.total, 0)
 
   const growthRate = previousPeriodSales > 0
     ? ((totalSales - previousPeriodSales) / previousPeriodSales) * 100
@@ -272,9 +240,22 @@ export default function SalesAnalyticsPage() {
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={salesData}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+              {isLoading ? (
+                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                  Loading sales analytics...
+                </div>
+              ) : analyticsError ? (
+                <div className="flex h-full items-center justify-center text-sm text-destructive">
+                  {analyticsError}
+                </div>
+              ) : salesData.length === 0 ? (
+                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                  No sales data available for the selected period.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={salesData}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis
                     dataKey="date"
                     className="text-xs"
@@ -302,6 +283,7 @@ export default function SalesAnalyticsPage() {
                   />
                 </LineChart>
               </ResponsiveContainer>
+            )}
             </div>
           </CardContent>
         </Card>

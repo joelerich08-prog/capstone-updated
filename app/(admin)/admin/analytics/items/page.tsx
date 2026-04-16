@@ -1,7 +1,6 @@
 'use client'
 
-import dynamic from 'next/dynamic'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { DashboardShell } from '@/components/layout/dashboard-shell'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -25,9 +24,7 @@ import {
 import { Progress } from '@/components/ui/progress'
 import { DatePickerWithRange } from '@/components/shared/date-range-picker'
 import { formatCurrency, formatPesoShort } from '@/lib/utils/currency'
-import { useTransactions } from '@/contexts/transaction-context'
-import { useProducts } from '@/contexts/products-context'
-import type { Transaction } from '@/lib/types'
+import { apiFetch } from '@/lib/api-client'
 import type { DateRange } from 'react-day-picker'
 import { subDays, format } from 'date-fns'
 import { 
@@ -40,14 +37,21 @@ import {
   ArrowUpDown,
   Calendar
 } from 'lucide-react'
-const BarChart: any = dynamic(() => import('recharts').then(mod => mod.BarChart as any), { ssr: false })
-const Bar: any = dynamic(() => import('recharts').then(mod => mod.Bar as any), { ssr: false })
-const XAxis: any = dynamic(() => import('recharts').then(mod => mod.XAxis as any), { ssr: false })
-const YAxis: any = dynamic(() => import('recharts').then(mod => mod.YAxis as any), { ssr: false })
-const CartesianGrid: any = dynamic(() => import('recharts').then(mod => mod.CartesianGrid as any), { ssr: false })
-const Tooltip: any = dynamic(() => import('recharts').then(mod => mod.Tooltip as any), { ssr: false })
-const ResponsiveContainer: any = dynamic(() => import('recharts').then(mod => mod.ResponsiveContainer as any), { ssr: false })
-const Cell: any = dynamic(() => import('recharts').then(mod => mod.Cell as any), { ssr: false })
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
+} from 'recharts'
+
+const CHART_COLORS = [
+  '#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6',
+  '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#6366f1'
+]
 
 interface ItemAnalytics {
   productId: string
@@ -55,146 +59,103 @@ interface ItemAnalytics {
   category: string
   quantitySold: number
   revenue: number
+  cost: number
+  profit: number
+  profitMargin: number
+  avgCost: number
   avgPrice: number
-  trend: number // percentage change
+  trend: number
 }
-
-function buildItemAnalytics(
-  currentTransactions: Transaction[],
-  previousTransactions: Transaction[],
-  productCategories: Map<string, string>,
-): ItemAnalytics[] {
-  const currentMap = new Map<
-    string,
-    { name: string; quantity: number; revenue: number }
-  >()
-  const previousMap = new Map<string, { quantity: number; revenue: number }>()
-
-  currentTransactions.forEach(tx => {
-    tx.items.forEach(item => {
-      const entry = currentMap.get(item.productId) ?? {
-        name: item.productName,
-        quantity: 0,
-        revenue: 0,
-      }
-      entry.quantity += item.quantity
-      entry.revenue += item.subtotal
-      currentMap.set(item.productId, entry)
-    })
-  })
-
-  previousTransactions.forEach(tx => {
-    tx.items.forEach(item => {
-      const entry = previousMap.get(item.productId) ?? { quantity: 0, revenue: 0 }
-      entry.quantity += item.quantity
-      entry.revenue += item.subtotal
-      previousMap.set(item.productId, entry)
-    })
-  })
-
-  return Array.from(currentMap.entries())
-    .map(([productId, data]) => {
-      const previous = previousMap.get(productId)
-      const category = productCategories.get(productId) ?? 'Unknown'
-      const trend =
-        previous && previous.revenue > 0
-          ? ((data.revenue - previous.revenue) / previous.revenue) * 100
-          : data.revenue > 0
-            ? 100
-            : 0
-
-      return {
-        productId,
-        name: data.name,
-        category,
-        quantitySold: data.quantity,
-        revenue: data.revenue,
-        avgPrice: data.quantity > 0 ? data.revenue / data.quantity : 0,
-        trend,
-      }
-    })
-    .sort((a, b) => b.revenue - a.revenue)
-}
-
-const CHART_COLORS = [
-  '#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6',
-  '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#6366f1'
-]
 
 export default function ItemsAnalyticsPage() {
-  const { transactions } = useTransactions()
-  const { products, categories: catalogCategories } = useProducts()
+  const [items, setItems] = useState<ItemAnalytics[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
-  const [sortBy, setSortBy] = useState<'revenue' | 'quantity'>('revenue')
+  const [sortBy, setSortBy] = useState<'revenue' | 'quantity' | 'profit'>('revenue')
   const [period, setPeriod] = useState<'7' | '14' | '30' | 'custom'>('7')
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined)
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
-  // Calculate date range based on period
-  const effectiveDateRange = useMemo(() => {
-    if (period === 'custom' && dateRange?.from && dateRange?.to) {
-      return { from: dateRange.from, to: dateRange.to }
+  const defaultRangeDays = period === '7' || period === '14' || period === '30' ? parseInt(period) : 7
+  const effectiveDateRange = period === 'custom' && dateRange?.from && dateRange?.to
+    ? { from: dateRange.from, to: dateRange.to }
+    : { from: subDays(new Date(), defaultRangeDays - 1), to: new Date() }
+
+  useEffect(() => {
+    const fetchItems = async () => {
+      setIsLoading(true)
+      setAnalyticsError(null)
+      try {
+        const params = new URLSearchParams()
+        params.set('period', period)
+
+        if (period === 'custom' && dateRange?.from && dateRange?.to) {
+          params.set('startDate', format(dateRange.from, 'yyyy-MM-dd'))
+          params.set('endDate', format(dateRange.to, 'yyyy-MM-dd'))
+        }
+
+        const result = await apiFetch<{
+          items: ItemAnalytics[]
+        }>(`/api/analytics/items_performance.php?${params.toString()}`)
+
+        setItems(result.items)
+      } catch (error) {
+        console.error('Failed to load item analytics:', error)
+        setAnalyticsError(error instanceof Error ? error.message : 'Unable to load item analytics')
+      } finally {
+        setIsLoading(false)
+      }
     }
-    const days = parseInt(period)
-    return { 
-      from: subDays(new Date(), days - 1), 
-      to: new Date() 
-    }
+
+    fetchItems()
   }, [period, dateRange])
 
-  // Get filtered transactions based on date range
-  const filteredTransactions = useMemo(() => {
-    return transactions.filter(tx => {
-      const txDate = new Date(tx.createdAt)
-      return txDate >= effectiveDateRange.from && txDate <= effectiveDateRange.to
-    })
-  }, [effectiveDateRange, transactions])
+  const topItems = items.slice(0, 10)
 
-  // Generate item analytics from filtered transactions
-  const itemAnalytics = useMemo(() => {
-    const days = period === 'custom' && dateRange?.from && dateRange?.to
-      ? Math.max(1, Math.ceil((dateRange.to.getTime() - dateRange.from.getTime()) / (1000 * 60 * 60 * 24)) + 1)
-      : parseInt(period === 'custom' ? '7' : period)
+  const categories = [...new Set(items.map(item => item.category))]
 
-    const previousRange = {
-      from: subDays(effectiveDateRange.from, days),
-      to: subDays(effectiveDateRange.from, 1),
-    }
-
-    const previousTransactions = transactions.filter(tx => {
-      const txDate = new Date(tx.createdAt)
-      return txDate >= previousRange.from && txDate <= previousRange.to
-    })
-
-    const categoryNameById = new Map(catalogCategories.map(category => [category.id, category.name]))
-    const productCategories = new Map(
-      products.map(product => [
-        product.id,
-        categoryNameById.get(product.categoryId) ?? 'Unknown',
-      ])
-    )
-
-    return buildItemAnalytics(filteredTransactions, previousTransactions, productCategories)
-  }, [filteredTransactions, transactions, effectiveDateRange.from, period, dateRange, products, catalogCategories])
-
-  const topItems = itemAnalytics.slice(0, 10)
-
-  const categories = [...new Set(itemAnalytics.map(item => item.category))]
-
-  const filteredItems = itemAnalytics
+  const filteredItems = items
     .filter(item => {
       const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase())
       const matchesCategory = categoryFilter === 'all' || item.category === categoryFilter
       return matchesSearch && matchesCategory
     })
-    .sort((a, b) => sortBy === 'revenue' ? b.revenue - a.revenue : b.quantitySold - a.quantitySold)
+    .sort((a, b) => sortBy === 'revenue'
+      ? b.revenue - a.revenue
+      : sortBy === 'profit'
+        ? b.profit - a.profit
+        : b.quantitySold - a.quantitySold)
 
-  const totalRevenue = itemAnalytics.reduce((sum, item) => sum + item.revenue, 0)
-  const totalQuantity = itemAnalytics.reduce((sum, item) => sum + item.quantitySold, 0)
+  const totalRevenue = items.reduce((sum, item) => sum + item.revenue, 0)
+  const totalProfit = items.reduce((sum, item) => sum + item.profit, 0)
+  const averageProfitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0
+  const totalQuantity = items.reduce((sum, item) => sum + item.quantitySold, 0)
+
+  const categorySummary = useMemo(() => {
+    const map = new Map<string, { revenue: number; profit: number; quantity: number }>()
+    items.forEach(item => {
+      const existing = map.get(item.category) ?? { revenue: 0, profit: 0, quantity: 0 }
+      existing.revenue += item.revenue
+      existing.profit += item.profit
+      existing.quantity += item.quantitySold
+      map.set(item.category, existing)
+    })
+
+    return Array.from(map.entries())
+      .map(([category, summary]) => ({
+        category,
+        revenue: summary.revenue,
+        profit: summary.profit,
+        margin: summary.revenue > 0 ? (summary.profit / summary.revenue) * 100 : 0,
+      }))
+      .sort((a, b) => b.profit - a.profit)
+      .slice(0, 5)
+  }, [items])
 
   // Export to CSV function
   const handleExport = () => {
-    const headers = ['Rank', 'Product', 'Category', 'Quantity Sold', 'Revenue (PHP)', 'Avg Price (PHP)', 'Share (%)', 'Trend (%)']
+    const headers = ['Rank', 'Product', 'Category', 'Quantity Sold', 'Revenue (PHP)', 'Profit (PHP)', 'Margin (%)', 'Avg Price (PHP)', 'Share (%)', 'Trend (%)']
     const rows = filteredItems.map((item, index) => {
       const sharePercent = (item.revenue / totalRevenue) * 100
       return [
@@ -203,6 +164,8 @@ export default function ItemsAnalyticsPage() {
         item.category,
         item.quantitySold,
         item.revenue.toFixed(2),
+        item.profit.toFixed(2),
+        item.profitMargin.toFixed(1),
         item.avgPrice.toFixed(2),
         sharePercent.toFixed(2),
         item.trend.toFixed(2)
@@ -258,7 +221,15 @@ export default function ItemsAnalyticsPage() {
           <CardDescription>Products ranked by total revenue</CardDescription>
         </CardHeader>
         <CardContent>
-          {topItems.length > 0 ? (
+          {isLoading ? (
+            <div className="flex h-[350px] items-center justify-center text-sm text-muted-foreground">
+              Loading item analytics...
+            </div>
+          ) : analyticsError ? (
+            <div className="flex h-[350px] items-center justify-center text-sm text-destructive">
+              {analyticsError}
+            </div>
+          ) : topItems.length > 0 ? (
             <div className="h-[350px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
@@ -305,13 +276,13 @@ export default function ItemsAnalyticsPage() {
       </Card>
 
       {/* Summary Stats */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total Products Sold</p>
-                <p className="text-2xl font-bold">{itemAnalytics.length}</p>
+                <p className="text-2xl font-bold">{items.length}</p>
               </div>
               <Package className="size-8 text-muted-foreground" />
             </div>
@@ -339,7 +310,40 @@ export default function ItemsAnalyticsPage() {
             </div>
           </CardContent>
         </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Total Profit</p>
+                <p className="text-2xl font-bold">{formatCurrency(totalProfit)}</p>
+                <p className="text-xs text-muted-foreground">Avg margin {averageProfitMargin.toFixed(1)}%</p>
+              </div>
+              <TrendingUp className="size-8 text-cyan-500" />
+            </div>
+          </CardContent>
+        </Card>
       </div>
+
+      <Card className="mt-4">
+        <CardHeader>
+          <CardTitle>Profit by Category</CardTitle>
+          <CardDescription>Top categories by profit for the selected period</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {categorySummary.map(category => (
+              <Card key={category.category} className="border">
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">{category.category}</p>
+                  <p className="text-2xl font-bold">{formatCurrency(category.profit)}</p>
+                  <p className="text-xs text-muted-foreground">Revenue {formatCurrency(category.revenue)}</p>
+                  <p className="text-xs text-muted-foreground">Margin {category.margin.toFixed(1)}%</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Full Item List */}
       <Card>
@@ -370,7 +374,7 @@ export default function ItemsAnalyticsPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <Select value={sortBy} onValueChange={(v) => setSortBy(v as 'revenue' | 'quantity')}>
+              <Select value={sortBy} onValueChange={(v) => setSortBy(v as 'revenue' | 'quantity' | 'profit')}>
                 <SelectTrigger className="w-[160px]">
                   <ArrowUpDown className="mr-2 size-4" />
                   <SelectValue />
@@ -378,6 +382,7 @@ export default function ItemsAnalyticsPage() {
                 <SelectContent>
                   <SelectItem value="revenue">By Revenue</SelectItem>
                   <SelectItem value="quantity">By Quantity</SelectItem>
+                  <SelectItem value="profit">By Profit</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -396,6 +401,8 @@ export default function ItemsAnalyticsPage() {
                   <TableHead>Category</TableHead>
                   <TableHead className="text-right">Qty Sold</TableHead>
                   <TableHead className="text-right">Revenue</TableHead>
+                  <TableHead className="text-right">Profit</TableHead>
+                  <TableHead className="text-right">Margin</TableHead>
                   <TableHead>Share</TableHead>
                   <TableHead className="text-right">Trend</TableHead>
                 </TableRow>
@@ -422,6 +429,12 @@ export default function ItemsAnalyticsPage() {
                       </TableCell>
                       <TableCell className="text-right font-medium tabular-nums">
                         {formatCurrency(item.revenue)}
+                      </TableCell>
+                      <TableCell className="text-right font-medium tabular-nums">
+                        {formatCurrency(item.profit)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {item.profitMargin.toFixed(1)}%
                       </TableCell>
                       <TableCell className="min-w-[120px]">
                         <div className="flex items-center gap-2">

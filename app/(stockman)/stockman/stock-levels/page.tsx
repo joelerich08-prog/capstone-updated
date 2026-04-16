@@ -12,6 +12,7 @@ export default function StockmanStockLevelsPage() {
       <StockLevelsOverview
         breakdownHref="/stockman/breakdown"
         transferHref="/stockman/transfer"
+        showPackaging
       />
     </StockmanShell>
   )

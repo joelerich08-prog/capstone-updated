@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/table"
 import { useTransactions } from "@/contexts/transaction-context"
 import { formatCurrency } from "@/lib/utils/currency"
+import { API_BASE_URL } from "@/lib/api-client"
 import { format, addDays, isToday, isWithinInterval, startOfDay, endOfDay } from "date-fns"
 import type { DateRange } from "react-day-picker"
 import { Download } from "lucide-react"
@@ -77,6 +78,52 @@ export default function CashierTransactionsPage() {
 
   const pagination = usePagination(filteredTransactions, { itemsPerPage: 10 })
 
+  const handleExport = async () => {
+    try {
+      // Build query parameters
+      const params = new URLSearchParams()
+      
+      if (viewMode === "today") {
+        const today = new Date()
+        const dateStr = format(today, 'yyyy-MM-dd')
+        params.append('startDate', dateStr)
+        params.append('endDate', dateStr)
+      } else if (dateRange?.from && dateRange?.to) {
+        params.append('startDate', format(dateRange.from, 'yyyy-MM-dd'))
+        params.append('endDate', format(dateRange.to, 'yyyy-MM-dd'))
+      }
+
+      // Download CSV from server
+      const url = `${API_BASE_URL}/api/transactions/export_csv.php?${params.toString()}`
+      const response = await fetch(url, { credentials: 'include' })
+      
+      if (!response.ok) {
+        const text = await response.text()
+        let errorMessage = text
+        try {
+          const json = JSON.parse(text)
+          errorMessage = json.error || text
+        } catch {
+          // response was not JSON
+        }
+        console.error('Export error:', errorMessage)
+        return
+      }
+
+      const blob = await response.blob()
+      const downloadUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = downloadUrl
+      a.download = `transactions-${format(new Date(), 'yyyy-MM-dd-HHmmss')}.csv`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(downloadUrl)
+    } catch (error) {
+      console.error('Export error:', error)
+    }
+  }
+
   return (
     <CashierShell title="Transactions" description="View and manage your transactions">
       {/* View Mode Toggle & Controls */}
@@ -91,7 +138,7 @@ export default function CashierTransactionsPage() {
         {viewMode === "all" && isClient && (
           <div className="flex flex-col gap-2 sm:flex-row">
             <DatePickerWithRange date={dateRange} setDate={setDateRange} />
-            <Button variant="outline">
+            <Button variant="outline" onClick={handleExport}>
               <Download className="mr-2 h-4 w-4" />
               Export
             </Button>

@@ -177,7 +177,7 @@ export default function AdminDashboardPage() {
       </div>
 
       {/* Stats Row */}
-      <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 mb-6">
+      <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 mb-6">
         <StatCard
           title="Today's Sales"
           value={formatPeso(stats.todaySales)}
@@ -207,6 +207,13 @@ export default function AdminDashboardPage() {
           icon={Package}
           description={dashboardLoading ? 'Updating...' : `${dashboardStats.lowStockCount} low stock alerts`}
           className={dashboardStats.lowStockCount > 0 ? 'border-orange-500/30' : ''}
+        />
+        <StatCard
+          title="Critical Stock"
+          value={dashboardStats.outOfStockCount.toString()}
+          icon={AlertTriangle}
+          description={dashboardLoading ? 'Updating...' : `${dashboardStats.outOfStockCount} out of stock`}
+          className={dashboardStats.outOfStockCount > 0 ? 'border-destructive/30' : ''}
         />
         <StatCard
           title="Pending Orders"
