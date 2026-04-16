@@ -33,7 +33,9 @@ const aggregateInventoryLevels = (productId: string, levels: InventoryLevel[]): 
     wholesaleQty: matchingLevels.reduce((sum, level) => sum + level.wholesaleQty, 0),
     retailQty: matchingLevels.reduce((sum, level) => sum + level.retailQty, 0),
     shelfQty: matchingLevels.reduce((sum, level) => sum + level.shelfQty, 0),
-    reorderLevel: matchingLevels.reduce((max, level) => Math.max(max, level.reorderLevel), 0),
+    shelfRestockLevel: matchingLevels.reduce((max, level) => Math.max(max, level.shelfRestockLevel), 0),
+    wholesaleReorderLevel: matchingLevels.reduce((max, level) => Math.max(max, level.wholesaleReorderLevel ?? 0), 0),
+    retailRestockLevel: matchingLevels.reduce((max, level) => Math.max(max, level.retailRestockLevel ?? 0), 0),
     updatedAt: latestUpdatedAt,
   }
 }
@@ -113,6 +115,14 @@ interface InventoryContextType {
     variantId: string | undefined,
     pcsPerPack: number,
     packsPerBox: number,
+  ) => Promise<{ success: boolean; error?: string }>
+
+  updateInventoryReorder: (
+    productId: string,
+    variantId: string | undefined,
+    wholesaleReorderLevel: number,
+    retailRestockLevel: number,
+    shelfRestockLevel: number,
   ) => Promise<{ success: boolean; error?: string }>
 
   // Refresh inventory from API
@@ -509,6 +519,51 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     }
   }, [refreshInventory, addActivityLog, toast, user])
 
+  const updateInventoryReorder = useCallback(async (
+    productId: string,
+    variantId: string | undefined,
+    wholesaleReorderLevel: number,
+    retailRestockLevel: number,
+    shelfRestockLevel: number,
+  ) => {
+    try {
+      await apiFetch('/api/inventory/update_reorder_level.php', {
+        method: 'POST',
+        body: {
+          productId,
+          variantId,
+          wholesaleReorderLevel,
+          retailRestockLevel,
+          shelfRestockLevel,
+        },
+      })
+
+      await refreshInventory()
+
+      addActivityLog(
+        'adjustment',
+        `Updated restock thresholds for product ${productId}${variantId ? ` variant ${variantId}` : ''}`,
+        `wholesaleReorderLevel: ${wholesaleReorderLevel}, retailRestockLevel: ${retailRestockLevel}, shelfRestockLevel: ${shelfRestockLevel}`,
+        user?.name || 'system'
+      )
+
+      toast({
+        title: 'Restock thresholds updated',
+        description: 'Stock restock levels were saved successfully.',
+      })
+
+      return { success: true }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to update reorder levels'
+      toast({
+        title: 'Save failed',
+        description: message,
+        variant: 'destructive',
+      })
+      return { success: false, error: message }
+    }
+  }, [refreshInventory, addActivityLog, toast, user])
+
   return (
     <InventoryContext.Provider
       value={{
@@ -522,6 +577,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         getStock,
         adjustStock,
         updateInventoryConversion,
+        updateInventoryReorder,
         refreshInventory,
       }}
     >

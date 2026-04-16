@@ -69,7 +69,9 @@ export interface InventoryLevel {
   shelfUnit: 'pack'
   pcsPerPack: number
   packsPerBox: number
-  reorderLevel: number
+  shelfRestockLevel: number
+  wholesaleReorderLevel?: number
+  retailRestockLevel?: number
   updatedAt: Date
 }
 
@@ -182,7 +184,7 @@ export interface ExpiryInfo {
 }
 
 // Alert Types
-export type AlertType = 'low_stock' | 'out_of_stock' | 'expiring' | 'expired' | 'system'
+export type AlertType = 'low_stock' | 'out_of_stock' | 'low_retail' | 'low_shelf' | 'expiring' | 'expired' | 'system'
 export type AlertPriority = 'low' | 'medium' | 'high' | 'critical'
 
 export interface Alert {

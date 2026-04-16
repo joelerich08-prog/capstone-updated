@@ -356,7 +356,8 @@ export const mockInventoryLevels: InventoryLevel[] = [
     shelfUnit: 'pack',
     pcsPerPack: 12,
     packsPerBox: 4,
-    reorderLevel: 20,
+    shelfRestockLevel: 20,
+    retailRestockLevel: 20,
     updatedAt: new Date(),
   },
   {
@@ -370,7 +371,8 @@ export const mockInventoryLevels: InventoryLevel[] = [
     shelfUnit: 'pack',
     pcsPerPack: 12,
     packsPerBox: 4,
-    reorderLevel: 15,
+    shelfRestockLevel: 15,
+    retailRestockLevel: 15,
     updatedAt: new Date(),
   },
   {
@@ -384,7 +386,8 @@ export const mockInventoryLevels: InventoryLevel[] = [
     shelfUnit: 'pack',
     pcsPerPack: 6,
     packsPerBox: 4,
-    reorderLevel: 30,
+    shelfRestockLevel: 30,
+    retailRestockLevel: 30,
     updatedAt: new Date(),
   },
   {
@@ -398,7 +401,8 @@ export const mockInventoryLevels: InventoryLevel[] = [
     shelfUnit: 'pack',
     pcsPerPack: 6,
     packsPerBox: 4,
-    reorderLevel: 25,
+    shelfRestockLevel: 25,
+    retailRestockLevel: 25,
     updatedAt: new Date(),
   },
   {
@@ -412,7 +416,8 @@ export const mockInventoryLevels: InventoryLevel[] = [
     shelfUnit: 'pack',
     pcsPerPack: 6,
     packsPerBox: 4,
-    reorderLevel: 20,
+    shelfRestockLevel: 20,
+    retailRestockLevel: 20,
     updatedAt: new Date(),
   },
   {
@@ -426,7 +431,8 @@ export const mockInventoryLevels: InventoryLevel[] = [
     shelfUnit: 'pack',
     pcsPerPack: 1,
     packsPerBox: 24,
-    reorderLevel: 15,
+    shelfRestockLevel: 15,
+    retailRestockLevel: 15,
     updatedAt: new Date(),
   },
   {
@@ -440,7 +446,8 @@ export const mockInventoryLevels: InventoryLevel[] = [
     shelfUnit: 'pack',
     pcsPerPack: 1,
     packsPerBox: 24,
-    reorderLevel: 12,
+    shelfRestockLevel: 12,
+    retailRestockLevel: 12,
     updatedAt: new Date(),
   },
   {
@@ -454,7 +461,8 @@ export const mockInventoryLevels: InventoryLevel[] = [
     shelfUnit: 'pack',
     pcsPerPack: 10,
     packsPerBox: 10,
-    reorderLevel: 50,
+    shelfRestockLevel: 50,
+    retailRestockLevel: 50,
     updatedAt: new Date(),
   },
   {
@@ -468,7 +476,8 @@ export const mockInventoryLevels: InventoryLevel[] = [
     shelfUnit: 'pack',
     pcsPerPack: 6,
     packsPerBox: 6,
-    reorderLevel: 12,
+    shelfRestockLevel: 12,
+    retailRestockLevel: 12,
     updatedAt: new Date(),
   },
   {
@@ -482,7 +491,8 @@ export const mockInventoryLevels: InventoryLevel[] = [
     shelfUnit: 'pack',
     pcsPerPack: 6,
     packsPerBox: 4,
-    reorderLevel: 10,
+    shelfRestockLevel: 10,
+    retailRestockLevel: 10,
     updatedAt: new Date(),
   },
   {
@@ -496,7 +506,8 @@ export const mockInventoryLevels: InventoryLevel[] = [
     shelfUnit: 'pack',
     pcsPerPack: 6,
     packsPerBox: 4,
-    reorderLevel: 8,
+    shelfRestockLevel: 8,
+    retailRestockLevel: 8,
     updatedAt: new Date(),
   },
   {
@@ -510,7 +521,8 @@ export const mockInventoryLevels: InventoryLevel[] = [
     shelfUnit: 'pack',
     pcsPerPack: 6,
     packsPerBox: 4,
-    reorderLevel: 15,
+    shelfRestockLevel: 15,
+    retailRestockLevel: 15,
     updatedAt: new Date(),
   },
   {
@@ -524,7 +536,8 @@ export const mockInventoryLevels: InventoryLevel[] = [
     shelfUnit: 'pack',
     pcsPerPack: 6,
     packsPerBox: 4,
-    reorderLevel: 10,
+    shelfRestockLevel: 10,
+    retailRestockLevel: 10,
     updatedAt: new Date(),
   },
   {
@@ -538,7 +551,8 @@ export const mockInventoryLevels: InventoryLevel[] = [
     shelfUnit: 'pack',
     pcsPerPack: 1,
     packsPerBox: 1,
-    reorderLevel: 10,
+    shelfRestockLevel: 10,
+    retailRestockLevel: 10,
     updatedAt: new Date(),
   },
   {
@@ -552,7 +566,8 @@ export const mockInventoryLevels: InventoryLevel[] = [
     shelfUnit: 'pack',
     pcsPerPack: 6,
     packsPerBox: 10,
-    reorderLevel: 50,
+    shelfRestockLevel: 50,
+    retailRestockLevel: 50,
     updatedAt: new Date(),
   },
   {
@@ -566,7 +581,8 @@ export const mockInventoryLevels: InventoryLevel[] = [
     shelfUnit: 'pack',
     pcsPerPack: 6,
     packsPerBox: 4,
-    reorderLevel: 15,
+    shelfRestockLevel: 15,
+    retailRestockLevel: 15,
     updatedAt: new Date(),
   },
   {
@@ -580,7 +596,8 @@ export const mockInventoryLevels: InventoryLevel[] = [
     shelfUnit: 'pack',
     pcsPerPack: 6,
     packsPerBox: 4,
-    reorderLevel: 12,
+    shelfRestockLevel: 12,
+    retailRestockLevel: 12,
     updatedAt: new Date(),
   },
   {
@@ -594,7 +611,8 @@ export const mockInventoryLevels: InventoryLevel[] = [
     shelfUnit: 'pack',
     pcsPerPack: 6,
     packsPerBox: 4,
-    reorderLevel: 25,
+    shelfRestockLevel: 25,
+    retailRestockLevel: 25,
     updatedAt: new Date(),
   },
   {
@@ -608,7 +626,8 @@ export const mockInventoryLevels: InventoryLevel[] = [
     shelfUnit: 'pack',
     pcsPerPack: 6,
     packsPerBox: 4,
-    reorderLevel: 18,
+    shelfRestockLevel: 18,
+    retailRestockLevel: 18,
     updatedAt: new Date(),
   },
   {
@@ -622,7 +641,8 @@ export const mockInventoryLevels: InventoryLevel[] = [
     shelfUnit: 'pack',
     pcsPerPack: 6,
     packsPerBox: 4,
-    reorderLevel: 10,
+    shelfRestockLevel: 10,
+    retailRestockLevel: 10,
     updatedAt: new Date(),
   },
 ]
@@ -637,7 +657,7 @@ export function getProductInventory(productId: string): InventoryLevel | undefin
 
 export function getLowStockProducts(): { product: Product; inventory: InventoryLevel }[] {
   return mockInventoryLevels
-    .filter(inv => inv.shelfQty <= inv.reorderLevel)
+    .filter(inv => inv.shelfQty <= inv.shelfRestockLevel)
     .map(inv => ({
       product: getProductById(inv.productId)!,
       inventory: inv,
@@ -654,3 +674,6 @@ export function getOutOfStockProducts(): { product: Product; inventory: Inventor
     }))
     .filter(item => item.product)
 }
+
+
+
