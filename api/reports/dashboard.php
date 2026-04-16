@@ -38,13 +38,13 @@ try {
     $profit = $stmt->fetch(PDO::FETCH_ASSOC);
     $todayProfit = (float)($profit['todayProfit'] ?? 0);
 
-    // Low stock count - using corrected formula (same as dashboard_summary.php)
+    // Low stock count - using wholesale threshold logic
     $stmt = $pdo->prepare(
         "SELECT COUNT(*) as lowStockCount 
          FROM inventory_levels 
-         WHERE reorderLevel > 0 
-         AND (wholesaleQty * packsPerBox * pcsPerPack + retailQty * pcsPerPack + shelfQty) <= reorderLevel
-         AND (wholesaleQty * packsPerBox * pcsPerPack + retailQty * pcsPerPack + shelfQty) > 0"
+         WHERE wholesaleReorderLevel > 0 
+         AND wholesaleQty <= wholesaleReorderLevel
+         AND wholesaleQty > 0"
     );
     $stmt->execute();
     $lowStock = $stmt->fetch(PDO::FETCH_ASSOC);

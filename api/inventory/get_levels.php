@@ -14,7 +14,7 @@ try {
     $pdo = Database::getInstance();
     
     $stmt = $pdo->query(
-        'SELECT id, productId, variantId, wholesaleQty, retailQty, shelfQty, wholesaleUnit, retailUnit, shelfUnit, pcsPerPack, packsPerBox, reorderLevel, updatedAt FROM inventory_levels'
+        'SELECT id, productId, variantId, wholesaleQty, retailQty, shelfQty, wholesaleUnit, retailUnit, shelfUnit, pcsPerPack, packsPerBox, shelfRestockLevel, wholesaleReorderLevel, retailRestockLevel, updatedAt FROM inventory_levels'
     );
     $inventoryLevels = $stmt->fetchAll(PDO::FETCH_ASSOC);
     

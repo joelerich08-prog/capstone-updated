@@ -94,7 +94,7 @@ try {
     $projectionChange = $prev7Total > 0 ? (($last7Total - $prev7Total) / $prev7Total) * 100 : 0.0;
 
     $stockStmt = $pdo->query(
-        'SELECT il.productId, p.name AS productName, il.wholesaleQty, il.packsPerBox, il.pcsPerPack, il.retailQty, il.shelfQty, il.reorderLevel
+        'SELECT il.productId, p.name AS productName, il.wholesaleQty, il.packsPerBox, il.pcsPerPack, il.retailQty, il.shelfQty, il.shelfRestockLevel
          FROM inventory_levels il
          LEFT JOIN products p ON p.id = il.productId'
     );
@@ -124,7 +124,7 @@ try {
         $salesQuantity = $productSales[$row['productId']] ?? 0;
         $avgDailySales = $salesQuantity > 0 ? round($salesQuantity / $historyDays, 1) : 0.0;
         $daysUntilStockout = $avgDailySales > 0 ? (int)floor($totalStock / $avgDailySales) : 0;
-        $reorderPoint = (int)$row['reorderLevel'];
+        $reorderPoint = (int)$row['shelfRestockLevel'];
         $needsReorder = $totalStock <= $reorderPoint;
         $status = $daysUntilStockout <= 3 ? 'critical' : ($daysUntilStockout <= 7 ? 'warning' : 'healthy');
 

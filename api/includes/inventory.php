@@ -364,7 +364,7 @@ function fetchRecordedBatchAllocations(
 function fetchInventoryLevel(PDO $pdo, string $productId, ?string $variantId = null, bool $lock = false): ?array
 {
     $variantId = normalizeInventoryVariantId($variantId);
-    $sql = 'SELECT id, productId, variantId, wholesaleQty, retailQty, shelfQty, wholesaleUnit, retailUnit, shelfUnit, pcsPerPack, packsPerBox, reorderLevel, updatedAt
+    $sql = 'SELECT id, productId, variantId, wholesaleQty, retailQty, shelfQty, wholesaleUnit, retailUnit, shelfUnit, pcsPerPack, packsPerBox, shelfRestockLevel, wholesaleReorderLevel, retailRestockLevel, updatedAt
             FROM inventory_levels
             WHERE productId = :productId AND ' . ($variantId === null ? 'variantId IS NULL' : 'variantId = :variantId') . ($lock ? ' FOR UPDATE' : '');
 
@@ -428,8 +428,10 @@ function createInventoryLevel(PDO $pdo, string $productId, ?string $variantId = 
             shelfUnit,
             pcsPerPack,
             packsPerBox,
-            reorderLevel
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            shelfRestockLevel,
+            wholesaleReorderLevel,
+            retailRestockLevel
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     $stmt->execute([
         $inventoryId,
@@ -444,14 +446,11 @@ function createInventoryLevel(PDO $pdo, string $productId, ?string $variantId = 
         1,
         1,
         0,
+        0,
+        0,
     ]);
 
-    $inventory = fetchInventoryLevel($pdo, $productId, $variantId, true);
-    if ($inventory) {
-        return $inventory;
-    }
-
-    return [
+    return fetchInventoryLevel($pdo, $productId, $variantId, false) ?: [
         'id' => $inventoryId,
         'productId' => $productId,
         'variantId' => $variantId,
@@ -463,7 +462,10 @@ function createInventoryLevel(PDO $pdo, string $productId, ?string $variantId = 
         'shelfUnit' => 'pack',
         'pcsPerPack' => 1,
         'packsPerBox' => 1,
-        'reorderLevel' => 0,
+        'shelfRestockLevel' => 0,
+        'wholesaleReorderLevel' => 0,
+        'retailRestockLevel' => 0,
+        'updatedAt' => date('Y-m-d H:i:s'),
     ];
 }
 

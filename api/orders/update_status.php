@@ -137,11 +137,11 @@ try {
                 'performedBy' => $userId,
             ]);
 
-            $stmt = $pdo->prepare("SELECT {$inventoryTier}Qty, reorderLevel FROM inventory_levels WHERE id = :id");
+            $stmt = $pdo->prepare("SELECT {$inventoryTier}Qty, shelfRestockLevel AS restockLevel FROM inventory_levels WHERE id = :id");
             $stmt->execute([':id' => $inventory['id']]);
             $updatedInventory = $stmt->fetch(PDO::FETCH_ASSOC);
 
-            if ($updatedInventory && $updatedInventory["{$inventoryTier}Qty"] <= $updatedInventory['reorderLevel']) {
+            if ($updatedInventory && $updatedInventory["{$inventoryTier}Qty"] <= $updatedInventory['restockLevel']) {
                 $alertId = bin2hex(random_bytes(16));
                 $stmt = $pdo->prepare('INSERT INTO alerts (id, type, priority, title, message, productId) VALUES (?, "low_stock", "high", "Low Stock Alert", ?, ?)');
                 $message = "Ordered item {$item['productId']} is low on {$inventoryTier} stock: {$updatedInventory["{$inventoryTier}Qty"]} remaining";

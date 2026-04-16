@@ -30,14 +30,14 @@ try {
     $profitRow = $stmt->fetch(PDO::FETCH_ASSOC);
     $todayProfit = (float)($profitRow['todayProfit'] ?? 0);
 
-    // Calculate low stock similar to stock levels page logic:
-    // reorderLevel > 0 && totalStock <= reorderLevel && totalStock > 0
+    // Calculate low stock using wholesale threshold logic:
+    // wholesaleReorderLevel > 0 && wholesaleQty <= wholesaleReorderLevel && wholesaleQty > 0
     $stmt = $pdo->prepare("
         SELECT COUNT(*) AS lowStockCount 
         FROM inventory_levels 
-        WHERE reorderLevel > 0 
-        AND (wholesaleQty * packsPerBox * pcsPerPack + retailQty * pcsPerPack + shelfQty) <= reorderLevel
-        AND (wholesaleQty * packsPerBox * pcsPerPack + retailQty * pcsPerPack + shelfQty) > 0
+        WHERE wholesaleReorderLevel > 0 
+        AND wholesaleQty <= wholesaleReorderLevel
+        AND wholesaleQty > 0
     ");
     $stmt->execute();
     $stockRow = $stmt->fetch(PDO::FETCH_ASSOC);
