@@ -148,7 +148,7 @@ export function StockTransferPanel() {
   })
 
   const lowShelfProducts = inventoryLevels
-    .filter((inv) => inv.shelfQty <= inv.reorderLevel && inv.retailQty > 0)
+    .filter((inv) => inv.shelfQty <= inv.shelfRestockLevel && inv.retailQty > 0)
     .map((inv) => ({
       ...inv,
       product: products.find((p) => p.id === inv.productId),

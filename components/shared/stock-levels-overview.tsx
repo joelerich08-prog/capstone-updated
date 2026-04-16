@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { Fragment } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -21,10 +22,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { useProducts } from '@/contexts/products-context'
 import { useInventory } from '@/contexts/inventory-context'
 import type { InventoryLevel, Product } from '@/lib/types'
-import { Search, Package, ArrowRight, AlertTriangle, Box, ChevronDown, ChevronRight } from 'lucide-react'
+import { Search, Package, ArrowRight, AlertTriangle, Box, ChevronDown, ChevronRight, Pencil } from 'lucide-react'
 import Link from 'next/link'
 import { usePagination } from '@/hooks/use-pagination'
 import { TablePagination } from '@/components/shared/table-pagination'
@@ -33,7 +41,10 @@ type InventoryWithProduct = InventoryLevel & {
   product: Product
   totalStock: number
   isLowStock: boolean
+  isLowShelf: boolean
   isOutOfStock: boolean
+  isLowRetail: boolean
+  wholesaleReorderLevel: number
 }
 
 type VariantInventoryWithProduct = InventoryWithProduct & {
@@ -55,7 +66,7 @@ export function StockLevelsOverview({
   showActions = false,
   productHrefPrefix = '',
 }: StockLevelsOverviewProps) {
-  const { inventoryLevels, getInventory, updateInventoryConversion } = useInventory()
+  const { inventoryLevels, getInventory, updateInventoryConversion, updateInventoryReorder } = useInventory()
   const { products, categories } = useProducts()
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
@@ -64,6 +75,12 @@ export function StockLevelsOverview({
   const [editingConversionId, setEditingConversionId] = useState<string | null>(null)
   const [conversionForm, setConversionForm] = useState({ pcsPerPack: 1, packsPerBox: 1 })
   const [isSavingConversion, setIsSavingConversion] = useState(false)
+  const [isReorderDialogOpen, setIsReorderDialogOpen] = useState(false)
+  const [selectedInventoryItem, setSelectedInventoryItem] = useState<InventoryWithProduct | VariantInventoryWithProduct | null>(null)
+  const [editWholesaleReorderLevel, setEditWholesaleReorderLevel] = useState('0')
+  const [editRetailRestockLevel, setEditRetailRestockLevel] = useState('0')
+  const [editShelfRestockLevel, setEditShelfRestockLevel] = useState('0')
+  const [isSavingReorder, setIsSavingReorder] = useState(false)
 
   const calculateTotalUnits = (inventory?: InventoryLevel) => {
     if (!inventory) {
@@ -87,7 +104,7 @@ export function StockLevelsOverview({
     variantId?: string,
   ): InventoryWithProduct | VariantInventoryWithProduct => {
     const totalStock = calculateTotalUnits(inventory)
-    const reorderLevel = inventory?.reorderLevel ?? 0
+    const wholesaleReorderLevel = inventory?.wholesaleReorderLevel ?? 0
 
     return {
       id: inventory?.id ?? `${product.id}::${variantId ?? 'base'}::stock-overview`,
@@ -101,12 +118,22 @@ export function StockLevelsOverview({
       shelfUnit: inventory?.shelfUnit ?? 'pack',
       pcsPerPack: inventory?.pcsPerPack ?? 1,
       packsPerBox: inventory?.packsPerBox ?? 1,
-      reorderLevel,
+      shelfRestockLevel: inventory?.shelfRestockLevel ?? 0,
+      wholesaleReorderLevel,
+      retailRestockLevel: inventory?.retailRestockLevel ?? 0,
       updatedAt: inventory?.updatedAt ?? product.createdAt,
       product,
       totalStock,
-      isLowStock: reorderLevel > 0 && totalStock <= reorderLevel && totalStock > 0,
+      isLowStock: wholesaleReorderLevel > 0 && (inventory?.wholesaleQty ?? 0) <= wholesaleReorderLevel && (inventory?.wholesaleQty ?? 0) > 0,
+      isLowShelf:
+        (inventory?.shelfRestockLevel ?? 0) > 0 &&
+        (inventory?.shelfQty ?? 0) <= (inventory?.shelfRestockLevel ?? 0) &&
+        (inventory?.shelfQty ?? 0) > 0,
       isOutOfStock: totalStock === 0,
+      isLowRetail:
+        (inventory?.retailRestockLevel ?? 0) > 0 &&
+        (inventory?.retailQty ?? 0) <= (inventory?.retailRestockLevel ?? 0) &&
+        (inventory?.retailQty ?? 0) > 0,
       ...(variantName ? { variantName } : {}),
     }
   }
@@ -125,9 +152,9 @@ export function StockLevelsOverview({
     const matchesCategory = categoryValue === 'all' || inv.product.categoryId === categoryValue
     const matchesStock =
       stockValue === 'all' ||
-      (stockValue === 'low' && inv.isLowStock) ||
+      (stockValue === 'low' && (inv.isLowStock || inv.isLowRetail || inv.isLowShelf)) ||
       (stockValue === 'out' && inv.isOutOfStock) ||
-      (stockValue === 'ok' && !inv.isLowStock && !inv.isOutOfStock)
+      (stockValue === 'ok' && !inv.isLowStock && !inv.isLowRetail && !inv.isLowShelf && !inv.isOutOfStock)
 
     return matchesSearch && matchesCategory && matchesStock
   }
@@ -193,8 +220,8 @@ export function StockLevelsOverview({
   const stats = {
     total: inventoryData.length,
     lowStock:
-      inventoryData.filter((i) => i.isLowStock).length +
-      Array.from(variantInventoryByProduct.values()).flat().filter((i) => i.isLowStock).length,
+      inventoryData.filter((i) => i.isLowStock || i.isLowRetail || i.isLowShelf).length +
+      Array.from(variantInventoryByProduct.values()).flat().filter((i) => i.isLowStock || i.isLowRetail || i.isLowShelf).length,
     outOfStock:
       inventoryData.filter((i) => i.isOutOfStock).length +
       Array.from(variantInventoryByProduct.values()).flat().filter((i) => i.isOutOfStock).length,
@@ -243,6 +270,50 @@ export function StockLevelsOverview({
     }
   }
 
+  const openReorderDialog = (inv: InventoryWithProduct | VariantInventoryWithProduct) => {
+    setSelectedInventoryItem(inv)
+    setEditWholesaleReorderLevel((inv.wholesaleReorderLevel ?? 0).toString())
+    setEditRetailRestockLevel((inv.retailRestockLevel ?? 0).toString())
+    setEditShelfRestockLevel((inv.shelfRestockLevel ?? 0).toString())
+    setIsReorderDialogOpen(true)
+  }
+
+  const closeReorderDialog = () => {
+    setIsReorderDialogOpen(false)
+    setSelectedInventoryItem(null)
+  }
+
+  const saveReorderDialog = async () => {
+    if (!selectedInventoryItem) {
+      return
+    }
+
+    const wholesaleReorderLevelValue = Number(editWholesaleReorderLevel)
+    const retailRestockLevelValue = Number(editRetailRestockLevel)
+    const shelfRestockLevelValue = Number(editShelfRestockLevel)
+    if (
+      !Number.isInteger(wholesaleReorderLevelValue) || wholesaleReorderLevelValue < 0 ||
+      !Number.isInteger(retailRestockLevelValue) || retailRestockLevelValue < 0 ||
+      !Number.isInteger(shelfRestockLevelValue) || shelfRestockLevelValue < 0
+    ) {
+      return
+    }
+
+    setIsSavingReorder(true)
+    const result = await updateInventoryReorder(
+      selectedInventoryItem.productId,
+      selectedInventoryItem.variantId,
+      wholesaleReorderLevelValue,
+      retailRestockLevelValue,
+      shelfRestockLevelValue,
+    )
+    setIsSavingReorder(false)
+
+    if (result.success) {
+      closeReorderDialog()
+    }
+  }
+
   const renderInventoryRow = (inv: InventoryWithProduct | VariantInventoryWithProduct, isVariant = false) => (
     <TableRow key={isVariant ? `${inv.productId}-${inv.variantId}` : inv.id}>
       <TableCell>
@@ -281,18 +352,39 @@ export function StockLevelsOverview({
       </TableCell>
       <TableCell className="text-center">
         <div className="flex flex-col items-center">
-          <span className="font-medium tabular-nums">{inv.retailQty}</span>
+          <div className="flex items-center gap-1">
+            <span className={`font-medium tabular-nums ${inv.isLowRetail ? 'text-orange-600 dark:text-orange-400' : ''}`}>{inv.retailQty}</span>
+            {inv.isLowRetail && <AlertTriangle className="size-4 text-orange-600 dark:text-orange-400" />}
+          </div>
           <span className="text-xs text-muted-foreground">{inv.retailUnit}</span>
         </div>
       </TableCell>
       <TableCell className="text-center">
         <div className="flex flex-col items-center">
           <span
-            className={`font-medium tabular-nums ${inv.isOutOfStock ? 'text-destructive' : inv.isLowStock ? 'text-orange-600 dark:text-orange-400' : ''}`}
+            className={`font-medium tabular-nums ${inv.isLowShelf ? 'text-orange-600 dark:text-orange-400' : inv.isOutOfStock ? 'text-destructive' : ''}`}
           >
             {inv.shelfQty}
           </span>
           <span className="text-xs text-muted-foreground">{inv.shelfUnit}</span>
+        </div>
+      </TableCell>
+      <TableCell className="text-center">
+        <div className="flex flex-col items-center">
+          <span className="font-medium tabular-nums">{inv.shelfRestockLevel}</span>
+          <span className="text-xs text-muted-foreground">units</span>
+        </div>
+      </TableCell>
+      <TableCell className="text-center">
+        <div className="flex flex-col items-center">
+          <span className="font-medium tabular-nums">{inv.retailRestockLevel}</span>
+          <span className="text-xs text-muted-foreground">units</span>
+        </div>
+      </TableCell>
+      <TableCell className="text-center">
+        <div className="flex flex-col items-center">
+          <span className="font-medium tabular-nums">{inv.wholesaleReorderLevel}</span>
+          <span className="text-xs text-muted-foreground">units</span>
         </div>
       </TableCell>
       {showPackaging && (
@@ -370,9 +462,17 @@ export function StockLevelsOverview({
             <AlertTriangle className="mr-1 size-3" />
             Out
           </Badge>
+        ) : inv.isLowShelf ? (
+          <Badge className="border-orange-500/20 bg-orange-500/10 text-xs text-orange-600 dark:text-orange-400">
+            Low Shelf ({inv.shelfRestockLevel})
+          </Badge>
+        ) : inv.isLowRetail ? (
+          <Badge className="border-orange-500/20 bg-orange-500/10 text-xs text-orange-600 dark:text-orange-400">
+            Low Retail
+          </Badge>
         ) : inv.isLowStock ? (
           <Badge className="border-orange-500/20 bg-orange-500/10 text-xs text-orange-600 dark:text-orange-400">
-            Low ({inv.reorderLevel})
+            Low Wholesale ({inv.wholesaleReorderLevel})
           </Badge>
         ) : (
           <Badge className="border-green-500/20 bg-green-500/10 text-xs text-green-600 dark:text-green-400">
@@ -382,20 +482,91 @@ export function StockLevelsOverview({
       </TableCell>
       {showActions && (
         <TableCell>
-          {!isVariant && (
-            <Button variant="ghost" size="icon" className="size-8" asChild>
-              <Link href={`${productHrefPrefix}/products?productId=${inv.product.id}&view=1`}>
-                <ArrowRight className="size-4" />
-              </Link>
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              onClick={() => openReorderDialog(inv)}
+              title="Edit reorder thresholds"
+            >
+              <Pencil className="size-4" />
             </Button>
-          )}
+            {!isVariant && (
+              <Button variant="ghost" size="icon" className="size-8" asChild>
+                <Link href={`${productHrefPrefix}/products?productId=${inv.product.id}&view=1`}>
+                  <ArrowRight className="size-4" />
+                </Link>
+              </Button>
+            )}
+          </div>
         </TableCell>
       )}
     </TableRow>
   )
 
+  const renderReorderDialog = () => (
+    <Dialog open={isReorderDialogOpen} onOpenChange={setIsReorderDialogOpen}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Edit Reorder Thresholds</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div>
+            <p className="text-sm text-muted-foreground">
+              {selectedInventoryItem?.product.name}
+              {selectedInventoryItem && 'variantName' in selectedInventoryItem && selectedInventoryItem.variantName
+                ? ` — ${selectedInventoryItem.variantName}`
+                : ''}
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="editWholesaleReorderLevel">Wholesale Reorder Level</Label>
+            <Input
+              id="editWholesaleReorderLevel"
+              type="number"
+              min={0}
+              value={editWholesaleReorderLevel}
+              onChange={(e) => setEditWholesaleReorderLevel(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="editRetailRestockLevel">Retail Restock Level</Label>
+            <Input
+              id="editRetailRestockLevel"
+              type="number"
+              min={0}
+              value={editRetailRestockLevel}
+              onChange={(e) => setEditRetailRestockLevel(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="editShelfRestockLevel">Shelf Restock Level</Label>
+            <Input
+              id="editShelfRestockLevel"
+              type="number"
+              min={0}
+              value={editShelfRestockLevel}
+              onChange={(e) => setEditShelfRestockLevel(e.target.value)}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={closeReorderDialog} disabled={isSavingReorder}>
+            Cancel
+          </Button>
+          <Button onClick={saveReorderDialog} disabled={isSavingReorder}>
+            Save Thresholds
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+
   return (
     <>
+      {renderReorderDialog()}
       <div className="grid gap-4 mb-6 md:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
@@ -504,6 +675,24 @@ export function StockLevelsOverview({
                   <div className="flex flex-col items-center">
                     <span>Shelf</span>
                     <span className="text-xs font-normal text-muted-foreground">(units)</span>
+                  </div>
+                </TableHead>
+                <TableHead className="text-center">
+                  <div className="flex flex-col items-center">
+                    <span>Shelf Reorder</span>
+                    <span className="text-xs font-normal text-muted-foreground">(threshold)</span>
+                  </div>
+                </TableHead>
+                <TableHead className="text-center">
+                  <div className="flex flex-col items-center">
+                    <span>Retail Reorder</span>
+                    <span className="text-xs font-normal text-muted-foreground">(threshold)</span>
+                  </div>
+                </TableHead>
+                <TableHead className="text-center">
+                  <div className="flex flex-col items-center">
+                    <span>Wholesale Reorder</span>
+                    <span className="text-xs font-normal text-muted-foreground">(threshold)</span>
                   </div>
                 </TableHead>
                 {showPackaging && (

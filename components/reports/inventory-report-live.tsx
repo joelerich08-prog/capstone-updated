@@ -66,14 +66,14 @@ export function InventoryReportLive({ dateRange }: InventoryReportLiveProps) {
   }, [])
 
   const inventoryByProduct = useMemo(() => {
-    const aggregated = new Map<string, { wholesaleQty: number; retailQty: number; shelfQty: number; reorderLevel: number }>()
+    const aggregated = new Map<string, { wholesaleQty: number; retailQty: number; shelfQty: number; wholesaleReorderLevel: number }>()
 
     inventoryLevels.forEach((level) => {
-      const current = aggregated.get(level.productId) ?? { wholesaleQty: 0, retailQty: 0, shelfQty: 0, reorderLevel: 0 }
+      const current = aggregated.get(level.productId) ?? { wholesaleQty: 0, retailQty: 0, shelfQty: 0, wholesaleReorderLevel: 0 }
       current.wholesaleQty += level.wholesaleQty
       current.retailQty += level.retailQty
       current.shelfQty += level.shelfQty
-      current.reorderLevel = Math.max(current.reorderLevel, level.reorderLevel)
+      current.wholesaleReorderLevel = Math.max(current.wholesaleReorderLevel, level.wholesaleReorderLevel ?? 0)
       aggregated.set(level.productId, current)
     })
 
@@ -87,10 +87,10 @@ export function InventoryReportLive({ dateRange }: InventoryReportLiveProps) {
     let outOfStock = 0
 
     inventoryLevels.forEach((level) => {
-      const totalUnits = level.wholesaleQty + level.retailQty + level.shelfQty
-      if (totalUnits === 0) {
+      const wholesaleUnits = level.wholesaleQty
+      if (wholesaleUnits === 0) {
         outOfStock += 1
-      } else if (totalUnits <= level.reorderLevel) {
+      } else if (wholesaleUnits <= (level.wholesaleReorderLevel ?? 0)) {
         lowStock += 1
       } else {
         inStock += 1
@@ -124,8 +124,8 @@ export function InventoryReportLive({ dateRange }: InventoryReportLiveProps) {
         .map(level => {
           const product = products.find((product) => product.id === level.productId)
           const variant = product?.variants.find((v) => v.id === level.variantId)
-          const current = level.wholesaleQty + level.retailQty + level.shelfQty
-          const minimum = level.reorderLevel
+          const current = level.wholesaleQty
+          const minimum = level.wholesaleReorderLevel ?? 0
           return {
             name: product?.name ?? 'Unknown',
             sku: product?.sku ?? 'Unknown',

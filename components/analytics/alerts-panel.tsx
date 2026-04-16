@@ -26,19 +26,9 @@ export function AlertsPanel() {
       const variant = product?.variants.find((v) => v.id === inv.variantId)
       const productLabel = variant ? `${product?.name || 'Product'} / ${variant.name}` : product?.name || 'Product'
       const totalStock = inv.wholesaleQty + inv.retailQty + inv.shelfQty
+      const wholesaleStock = inv.wholesaleQty
 
-      if (totalStock <= inv.reorderLevel && totalStock > 0) {
-        alertList.push({
-          id: `low-stock-${inv.id}`,
-          type: 'low_stock',
-          title: 'Low Stock Alert',
-          message: `${productLabel} is running low (${totalStock} remaining)`,
-          priority: 'high',
-          createdAt: new Date(),
-          productId: inv.productId,
-          isRead: false,
-        })
-      } else if (totalStock === 0) {
+      if (totalStock === 0) {
         alertList.push({
           id: `out-of-stock-${inv.id}`,
           type: 'out_of_stock',
@@ -49,6 +39,45 @@ export function AlertsPanel() {
           productId: inv.productId,
           isRead: false,
         })
+      } else {
+        if (wholesaleStock <= (inv.wholesaleReorderLevel ?? 0) && wholesaleStock > 0) {
+          alertList.push({
+            id: `low-stock-${inv.id}`,
+            type: 'low_stock',
+            title: 'Low Wholesale Stock',
+            message: `${productLabel} wholesale stock is low (${wholesaleStock} ${inv.wholesaleUnit} remaining)`,
+            priority: 'high',
+            createdAt: new Date(),
+            productId: inv.productId,
+            isRead: false,
+          })
+        }
+
+        if ((inv.shelfQty ?? 0) <= (inv.shelfRestockLevel ?? 0) && (inv.shelfQty ?? 0) > 0) {
+          alertList.push({
+            id: `low-shelf-${inv.id}`,
+            type: 'low_shelf',
+            title: 'Low Shelf Stock',
+            message: `${productLabel} shelf stock is low (${inv.shelfQty} ${inv.shelfUnit} remaining)`,
+            priority: 'medium',
+            createdAt: new Date(),
+            productId: inv.productId,
+            isRead: false,
+          })
+        }
+
+        if ((inv.retailQty ?? 0) <= (inv.retailRestockLevel ?? 0) && (inv.retailQty ?? 0) > 0) {
+          alertList.push({
+            id: `low-retail-${inv.id}`,
+            type: 'low_retail',
+            title: 'Low Retail Stock',
+            message: `${productLabel} retail stock is low (${inv.retailQty} ${inv.retailUnit} remaining)`,
+            priority: 'medium',
+            createdAt: new Date(),
+            productId: inv.productId,
+            isRead: false,
+          })
+        }
       }
     })
 
@@ -91,6 +120,8 @@ export function AlertsPanel() {
     switch (type) {
       case 'low_stock':
       case 'out_of_stock':
+      case 'low_retail':
+      case 'low_shelf':
         return Package
       default:
         return Bell

@@ -260,8 +260,8 @@ export function StockBreakdownPanel() {
                     <span className="font-medium">{inventory.pcsPerPack}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Reorder Level</span>
-                    <span className="font-medium">{inventory.reorderLevel} packs</span>
+                    <span className="text-muted-foreground">Shelf Restock Level</span>
+                    <span className="font-medium">{inventory.shelfRestockLevel} packs</span>
                   </div>
                 </div>
               </div>
