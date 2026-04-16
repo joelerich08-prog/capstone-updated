@@ -2,29 +2,18 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '@/lib/api-client'
+import type { DashboardSummaryStats } from '@/lib/types'
 
-export interface DashboardTopProduct {
-  productId: string
-  productName: string
-  totalQuantity: number
-}
-
-export interface DashboardStats {
-  todaySales: number
-  todayProfit: number
-  lowStockCount: number
-  topProducts: DashboardTopProduct[]
-}
-
-const defaultDashboardStats: DashboardStats = {
+const defaultDashboardStats: DashboardSummaryStats = {
   todaySales: 0,
   todayProfit: 0,
   lowStockCount: 0,
+  outOfStockCount: 0,
   topProducts: [],
 }
 
 export function useDashboardStats() {
-  const [stats, setStats] = useState<DashboardStats>(defaultDashboardStats)
+  const [stats, setStats] = useState<DashboardSummaryStats>(defaultDashboardStats)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -32,11 +21,12 @@ export function useDashboardStats() {
     try {
       setIsLoading(true)
       setError(null)
-      const data = await apiFetch<DashboardStats>('/api/reports/dashboard_summary.php')
+      const data = await apiFetch<DashboardSummaryStats>('/api/reports/dashboard_summary.php')
       setStats({
         todaySales: data.todaySales ?? 0,
         todayProfit: data.todayProfit ?? 0,
         lowStockCount: data.lowStockCount ?? 0,
+        outOfStockCount: data.outOfStockCount ?? 0,
         topProducts: Array.isArray(data.topProducts) ? data.topProducts : [],
       })
     } catch (err) {

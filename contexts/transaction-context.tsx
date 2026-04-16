@@ -4,12 +4,13 @@ import { createContext, useContext, useState, useCallback, useEffect, type React
 import type { Transaction, TransactionItem, PaymentType } from '@/lib/types'
 import { apiFetch, isApiErrorWithStatus } from '@/lib/api-client'
 import { useAuth } from '@/contexts/auth-context'
+import { validateTransaction, validateRefundRequest } from '@/lib/utils/transaction-validation'
 
 interface TransactionContextType {
   transactions: Transaction[]
   isLoading: boolean
   refreshTransactions: () => Promise<void>
-  addTransaction: (transaction: Omit<Transaction, 'id' | 'invoiceNo' | 'createdAt' | 'cashierId' | 'status'> & Partial<Pick<Transaction, 'cashierId' | 'status'>> & { invoiceNo?: string }) => Promise<Transaction | null>
+  addTransaction: (transaction: Omit<Transaction, 'id' | 'invoiceNo' | 'createdAt' | 'cashierId' | 'status'> & Partial<Pick<Transaction, 'cashierId' | 'status'>> & { invoiceNo?: string }) => Promise<{ transaction: Transaction | null; error?: string }>
   refundTransaction: (transactionId: string, reason?: string) => Promise<{ success: boolean; error?: string }>
   getTransactionById: (id: string) => Transaction | undefined
   getTodayTransactions: () => Transaction[]
@@ -108,13 +109,18 @@ export function TransactionProvider({ children }: { children: ReactNode }) {
     })
   }, [transactions])
 
-  // Calculate profit: sum of (unitPrice - costPrice) × quantity for all items
-  // Note: This requires transaction_items to have costPrice column
-  // For now, using 22% margin estimate if cost data not available
+  // Calculate profit from transaction items
+  // Profit = sum of (unitPrice - costPrice) × quantity
   const calculateProfit = useCallback((txList: Transaction[]): number => {
-    const sales = txList.reduce((sum, tx) => sum + tx.total, 0)
-    // Conservative estimate for sari-sari store margins
-    return sales * 0.22
+    let totalProfit = 0
+    txList.forEach(tx => {
+      tx.items.forEach(item => {
+        const costPrice = item.costPrice ?? 0
+        const profitPerUnit = item.unitPrice - costPrice
+        totalProfit += profitPerUnit * item.quantity
+      })
+    })
+    return Math.max(totalProfit, 0) // Prevent negative profit display
   }, [])
 
   const getTodayStats = useCallback((): { sales: number; count: number; profit: number } => {
@@ -129,7 +135,14 @@ export function TransactionProvider({ children }: { children: ReactNode }) {
 
   const addTransaction = useCallback(async (
     transactionData: Omit<Transaction, 'id' | 'invoiceNo' | 'createdAt' | 'cashierId' | 'status'> & Partial<Pick<Transaction, 'cashierId' | 'status'>> & { invoiceNo?: string }
-  ): Promise<Transaction | null> => {
+  ): Promise<{ transaction: Transaction | null; error?: string }> => {
+    // Validate transaction data before sending
+    const validationErrors = validateTransaction(transactionData)
+    if (validationErrors.length > 0) {
+      const errorMessage = validationErrors.map(e => e.message).join('; ')
+      return { transaction: null, error: `Validation failed: ${errorMessage}` }
+    }
+
     try {
       const result = await apiFetch('/api/pos/checkout.php', {
         method: 'POST',
@@ -144,14 +157,22 @@ export function TransactionProvider({ children }: { children: ReactNode }) {
         createdAt: new Date(rawTransaction.createdAt),
       }
       setTransactions(prev => [transaction, ...prev])
-      return transaction
+      return { transaction }
     } catch (error) {
-      console.error('Network error creating transaction:', error)
-      return null
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create transaction'
+      console.error('Error creating transaction:', error)
+      return { transaction: null, error: errorMessage }
     }
   }, [])
 
   const refundTransaction = useCallback(async (transactionId: string, reason?: string): Promise<{ success: boolean; error?: string }> => {
+    // Validate refund request
+    const validationErrors = validateRefundRequest({ transactionId, reason })
+    if (validationErrors.length > 0) {
+      const errorMessage = validationErrors.map(e => e.message).join('; ')
+      return { success: false, error: `Validation failed: ${errorMessage}` }
+    }
+
     try {
       await apiFetch('/api/transactions/refund.php', {
         method: 'POST',
@@ -171,7 +192,8 @@ export function TransactionProvider({ children }: { children: ReactNode }) {
 
       return { success: true }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Network error occurred'
+      const message = error instanceof Error ? error.message : 'Failed to refund transaction'
+      console.error('Error refunding transaction:', error)
       return { success: false, error: message }
     }
   }, [])

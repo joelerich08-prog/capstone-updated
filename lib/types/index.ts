@@ -85,6 +85,7 @@ export interface TransactionItem {
   variantName?: string
   quantity: number
   unitPrice: number
+  costPrice?: number
   subtotal: number
 }
 
@@ -218,6 +219,20 @@ export interface CartItem {
   subtotal: number
   unitType?: PurchaseUnitType  // 'piece' for shelf, 'pack' for retail, 'box' for wholesale
   unitLabel?: string  // Display label like "box", "pack", "piece"
+}
+
+export interface DashboardTopProduct {
+  productId: string
+  productName: string
+  totalQuantity: number
+}
+
+export interface DashboardSummaryStats {
+  todaySales: number
+  todayProfit: number
+  lowStockCount: number
+  outOfStockCount: number
+  topProducts: DashboardTopProduct[]
 }
 
 // Dashboard Stats

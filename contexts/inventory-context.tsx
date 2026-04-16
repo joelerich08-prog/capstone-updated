@@ -108,6 +108,13 @@ interface InventoryContextType {
     variantId?: string
   ) => Promise<{ success: boolean; error?: string }>
 
+  updateInventoryConversion: (
+    productId: string,
+    variantId: string | undefined,
+    pcsPerPack: number,
+    packsPerBox: number,
+  ) => Promise<{ success: boolean; error?: string }>
+
   // Refresh inventory from API
   refreshInventory: () => Promise<void>
 }
@@ -455,6 +462,53 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     }
   }, [refreshInventory, addActivityLog, toast])
 
+  const updateInventoryConversion = useCallback(async (
+    productId: string,
+    variantId: string | undefined,
+    pcsPerPack: number,
+    packsPerBox: number,
+  ) => {
+    try {
+      if (pcsPerPack <= 0 || packsPerBox <= 0) {
+        return { success: false, error: 'Conversion values must be greater than zero' }
+      }
+
+      await apiFetch('/api/inventory/update_conversion.php', {
+        method: 'POST',
+        body: {
+          productId,
+          variantId,
+          pcsPerPack,
+          packsPerBox,
+        },
+      })
+
+      await refreshInventory()
+
+      addActivityLog(
+        'adjustment',
+        `Updated conversion for product ${productId}${variantId ? ` variant ${variantId}` : ''}`,
+        `pcsPerPack: ${pcsPerPack}, packsPerBox: ${packsPerBox}`,
+        user?.name || 'system'
+      )
+
+      toast({
+        title: 'Conversion updated',
+        description: `Stock conversion values were saved successfully.`,
+      })
+
+      return { success: true }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to update conversion values'
+      toast({
+        title: 'Save failed',
+        description: message,
+        variant: 'destructive',
+      })
+      return { success: false, error: message }
+    }
+  }, [refreshInventory, addActivityLog, toast, user])
+
   return (
     <InventoryContext.Provider
       value={{
@@ -467,6 +521,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         getInventory,
         getStock,
         adjustStock,
+        updateInventoryConversion,
         refreshInventory,
       }}
     >
