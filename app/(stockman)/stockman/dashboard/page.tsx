@@ -27,8 +27,8 @@ export default function StockmanDashboardPage() {
   const lowStockItems = products.filter(p => {
     const inventory = inventoryLevels.find(inv => inv.productId === p.id)
     const storeStock = inventory?.shelfQty || 0
-    const reorderLevel = inventory?.reorderLevel || 20
-    return storeStock < reorderLevel
+    const restockLevel = inventory?.shelfRestockLevel || 20
+    return storeStock < restockLevel
   }).slice(0, 5)
 
   const criticalItems = lowStockItems.filter(p => {
@@ -55,7 +55,7 @@ export default function StockmanDashboardPage() {
 
   // Calculate pending tasks based on low stock items that need action
   const itemsNeedingTransfer = inventoryLevels.filter(inv => 
-    inv.shelfQty <= inv.reorderLevel && inv.retailQty > 0
+    inv.shelfQty <= inv.shelfRestockLevel && inv.retailQty > 0
   ).length
   const itemsNeedingBreakdown = inventoryLevels.filter(inv => 
     inv.retailQty < 10 && inv.wholesaleQty > 0
@@ -172,8 +172,8 @@ export default function StockmanDashboardPage() {
                 {lowStockItems.map((product) => {
                   const inventory = inventoryLevels.find(inv => inv.productId === product.id)
                   const storeStock = inventory?.shelfQty || 0
-                  const reorderLevel = inventory?.reorderLevel || 20
-                  const maxStock = reorderLevel * 2
+                  const restockLevel = inventory?.shelfRestockLevel || 20
+                  const maxStock = restockLevel * 2
                   const percentage = (storeStock / maxStock) * 100
                   const isCritical = storeStock < 5
                   return (

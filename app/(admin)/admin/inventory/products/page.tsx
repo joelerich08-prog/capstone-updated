@@ -380,6 +380,10 @@ export default function ProductsPage() {
   }
 
   const handleEditProduct = (product: Product) => {
+    const productInventory = inventoryLevels.find(
+      (inv) => inv.productId === product.id && !inv.variantId,
+    )
+
     setSelectedProduct(product)
     setEditName(product.name)
     setEditDescription(product.description || '')
@@ -392,6 +396,10 @@ export default function ProductsPage() {
   }
 
   const handleViewVariant = (product: Product, variant: Product['variants'][number]) => {
+    const variantInventory = inventoryLevels.find(
+      (inv) => inv.productId === product.id && inv.variantId === variant.id,
+    )
+
     setSelectedVariantProduct(product)
     setSelectedVariant(variant)
     setEditVariantName(variant.name)
@@ -1077,8 +1085,8 @@ export default function ProductsPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-muted-foreground text-xs">Reorder Level</Label>
-                  <p className="font-medium">{selectedProductInventory?.reorderLevel ?? 0}</p>
+                  <Label className="text-muted-foreground text-xs">Wholesale Reorder Level</Label>
+                  <p className="font-medium">{selectedProductInventory?.wholesaleReorderLevel ?? 0}</p>
                 </div>
                 <div>
                   <Label className="text-muted-foreground text-xs">Updated At</Label>
@@ -1299,8 +1307,8 @@ export default function ProductsPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-muted-foreground text-xs">Reorder Level</Label>
-                  <p className="font-medium">{selectedVariantInventory?.reorderLevel ?? 0}</p>
+                  <Label className="text-muted-foreground text-xs">Wholesale Reorder Level</Label>
+                  <p className="font-medium">{selectedVariantInventory?.wholesaleReorderLevel ?? 0}</p>
                 </div>
                 <div>
                   <Label className="text-muted-foreground text-xs">Updated At</Label>

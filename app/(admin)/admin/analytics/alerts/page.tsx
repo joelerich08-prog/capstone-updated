@@ -24,6 +24,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { apiFetch } from '@/lib/api-client'
+import { usePagination } from '@/hooks/use-pagination'
+import { TablePagination } from '@/components/shared/table-pagination'
 import type { Alert, AlertType, AlertPriority } from '@/lib/types'
 import { 
   AlertTriangle, 
@@ -49,6 +51,16 @@ const alertTypeConfig: Record<AlertType, { label: string; icon: React.ReactNode;
     label: 'Out of Stock', 
     icon: <AlertTriangle className="size-4" />, 
     color: 'bg-red-500/10 text-red-700 border-red-500/30' 
+  },
+  low_retail: { 
+    label: 'Low Retail Stock', 
+    icon: <Package className="size-4" />, 
+    color: 'bg-orange-500/10 text-orange-700 border-orange-500/30' 
+  },
+  low_shelf: {
+    label: 'Low Shelf Stock',
+    icon: <Package className="size-4" />,
+    color: 'bg-orange-500/10 text-orange-700 border-orange-500/30'
   },
   expiring: { 
     label: 'Expiring Soon', 
@@ -105,6 +117,9 @@ export default function AlertsPage() {
     const matchesRead = showRead || !alert.isRead
     return matchesType && matchesPriority && matchesRead
   })
+
+  const pagination = usePagination(filteredAlerts, { itemsPerPage: 10 })
+  const displayedAlerts = pagination.paginatedItems
 
   const unreadCount = alerts.filter(a => !a.isRead).length
   const criticalCount = alerts.filter(a => a.priority === 'critical' && !a.isRead).length
@@ -275,6 +290,8 @@ export default function AlertsPage() {
                 <SelectItem value="all">All Types</SelectItem>
                 <SelectItem value="low_stock">Low Stock</SelectItem>
                 <SelectItem value="out_of_stock">Out of Stock</SelectItem>
+                <SelectItem value="low_retail">Low Retail</SelectItem>
+                <SelectItem value="low_shelf">Low Shelf</SelectItem>
                 <SelectItem value="expiring">Expiring</SelectItem>
                 <SelectItem value="system">System</SelectItem>
               </SelectContent>
@@ -316,7 +333,7 @@ export default function AlertsPage() {
 
           {/* Alerts */}
           <div className="space-y-3">
-            {filteredAlerts.map((alert) => {
+            {displayedAlerts.map((alert) => {
               const typeConfig = alertTypeConfig[alert.type]
               const prioConfig = priorityConfig[alert.priority]
               
@@ -378,6 +395,18 @@ export default function AlertsPage() {
               </div>
             )}
           </div>
+          <TablePagination
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            startIndex={pagination.startIndex}
+            endIndex={pagination.endIndex}
+            totalItems={pagination.totalItems}
+            itemsPerPage={pagination.itemsPerPage}
+            onPageChange={pagination.goToPage}
+            onPrevPage={pagination.goToPrevPage}
+            onNextPage={pagination.goToNextPage}
+            onItemsPerPageChange={pagination.setItemsPerPage}
+          />
         </CardContent>
       </Card>
 

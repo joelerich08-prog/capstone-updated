@@ -13,6 +13,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { usePagination } from '@/hooks/use-pagination'
+import { TablePagination } from '@/components/shared/table-pagination'
 import {
   Table,
   TableBody,
@@ -126,6 +128,9 @@ export default function ItemsAnalyticsPage() {
       : sortBy === 'profit'
         ? b.profit - a.profit
         : b.quantitySold - a.quantitySold)
+
+  const pagination = usePagination(filteredItems, { itemsPerPage: 15 })
+  const pageItems = pagination.paginatedItems
 
   const totalRevenue = items.reduce((sum, item) => sum + item.revenue, 0)
   const totalProfit = items.reduce((sum, item) => sum + item.profit, 0)
@@ -408,12 +413,12 @@ export default function ItemsAnalyticsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredItems.slice(0, 15).map((item, index) => {
+                {pageItems.map((item, index) => {
                   const sharePercent = (item.revenue / totalRevenue) * 100
                   return (
                     <TableRow key={item.productId}>
                       <TableCell className="font-medium text-muted-foreground">
-                        {index + 1}
+                        {pagination.startIndex + index}
                       </TableCell>
                       <TableCell>
                         <div className="font-medium">{item.name}</div>
@@ -463,9 +468,18 @@ export default function ItemsAnalyticsPage() {
             </Table>
           </div>
 
-          <div className="mt-4 text-sm text-muted-foreground text-center">
-            Showing {Math.min(15, filteredItems.length)} of {filteredItems.length} products
-          </div>
+          <TablePagination
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            startIndex={pagination.startIndex}
+            endIndex={pagination.endIndex}
+            totalItems={pagination.totalItems}
+            itemsPerPage={pagination.itemsPerPage}
+            onPageChange={pagination.goToPage}
+            onPrevPage={pagination.goToPrevPage}
+            onNextPage={pagination.goToNextPage}
+            onItemsPerPageChange={pagination.setItemsPerPage}
+          />
         </CardContent>
       </Card>
     </DashboardShell>

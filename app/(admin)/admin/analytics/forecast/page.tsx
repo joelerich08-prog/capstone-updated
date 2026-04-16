@@ -7,6 +7,8 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { formatCurrency, formatPesoShort } from '@/lib/utils/currency'
 import { apiFetch } from '@/lib/api-client'
+import { usePagination } from '@/hooks/use-pagination'
+import { TablePagination } from '@/components/shared/table-pagination'
 import { 
   TrendingUp, 
   AlertTriangle,
@@ -97,6 +99,9 @@ export default function ForecastPage() {
   const averageStockDays = stockForecast.length > 0
     ? stockForecast.reduce((sum, item) => sum + item.daysUntilStockout, 0) / stockForecast.length
     : 0
+
+  const pagination = usePagination(stockForecast, { itemsPerPage: 8 })
+  const displayedForecastItems = pagination.paginatedItems
 
   return (
     <DashboardShell
@@ -286,8 +291,8 @@ export default function ForecastPage() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {stockForecast.map((item, index) => (
-              <div key={`${item.id}-${index}`} className="rounded-lg border p-4">
+            {displayedForecastItems.map((item, index) => (
+              <div key={`${item.id}-${pagination.startIndex + index}`} className="rounded-lg border p-4">
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <div className="flex items-center gap-2">
@@ -348,6 +353,18 @@ export default function ForecastPage() {
               </div>
             ))}
           </div>
+          <TablePagination
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            startIndex={pagination.startIndex}
+            endIndex={pagination.endIndex}
+            totalItems={pagination.totalItems}
+            itemsPerPage={pagination.itemsPerPage}
+            onPageChange={pagination.goToPage}
+            onPrevPage={pagination.goToPrevPage}
+            onNextPage={pagination.goToNextPage}
+            onItemsPerPageChange={pagination.setItemsPerPage}
+          />
         </CardContent>
       </Card>
     </DashboardShell>
