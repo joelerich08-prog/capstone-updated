@@ -215,7 +215,7 @@ INSERT INTO inventory_levels (
     shelfUnit,
     pcsPerPack,
     packsPerBox,
-    reorderLevel
+    shelfRestockLevel
 )
 VALUES
     ('inv-piattos-cheese', 'prd-piattos-cheese', NULL, 18, 36, 24, 'box', 'pack', 'pack', 1, 24, 12),
@@ -237,7 +237,7 @@ ON DUPLICATE KEY UPDATE
     shelfUnit = VALUES(shelfUnit),
     pcsPerPack = VALUES(pcsPerPack),
     packsPerBox = VALUES(packsPerBox),
-    reorderLevel = VALUES(reorderLevel);
+    shelfRestockLevel = VALUES(shelfRestockLevel);
 
 INSERT INTO product_batches (
     id,

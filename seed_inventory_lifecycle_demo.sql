@@ -200,7 +200,7 @@ INSERT INTO inventory_levels (
     shelfUnit,
     pcsPerPack,
     packsPerBox,
-    reorderLevel
+    shelfRestockLevel
 )
 VALUES
     ('inv-life-sardines', 'prd-life-sardines', NULL, 0, 0, 16, 'case', 'can', 'pack', 1, 24, 5),
@@ -214,7 +214,7 @@ ON DUPLICATE KEY UPDATE
     shelfUnit = VALUES(shelfUnit),
     pcsPerPack = VALUES(pcsPerPack),
     packsPerBox = VALUES(packsPerBox),
-    reorderLevel = VALUES(reorderLevel);
+    shelfRestockLevel = VALUES(shelfRestockLevel);
 
 INSERT INTO product_batches (
     id,

@@ -449,7 +449,7 @@ INSERT INTO inventory_levels (
     shelfUnit,
     pcsPerPack,
     packsPerBox,
-    reorderLevel
+    shelfRestockLevel
 )
 VALUES
     ('inv-coke-mismo', 'prd-coke-mismo', NULL, 25, 60, 24, 'case', 'bottle', 'pack', 1, 24, 20),
@@ -471,7 +471,7 @@ ON DUPLICATE KEY UPDATE
     shelfUnit = VALUES(shelfUnit),
     pcsPerPack = VALUES(pcsPerPack),
     packsPerBox = VALUES(packsPerBox),
-    reorderLevel = VALUES(reorderLevel);
+    shelfRestockLevel = VALUES(shelfRestockLevel);
 
 INSERT INTO product_batches (
     id,
